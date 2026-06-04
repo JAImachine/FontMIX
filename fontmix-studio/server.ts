@@ -7,7 +7,8 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT || 3000);
+const HOST = process.env.HOST || "0.0.0.0";
 
 app.use(express.json());
 
@@ -203,8 +204,8 @@ async function start() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`[FontMix Studio] Express server running on http://localhost:${PORT}`);
+  app.listen(PORT, HOST, () => {
+    console.log(`[FontMix Studio] Express server running on http://${HOST === "0.0.0.0" ? "localhost" : HOST}:${PORT}`);
   });
 }
 

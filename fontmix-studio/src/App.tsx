@@ -24,6 +24,36 @@ import {
   EyeOff
 } from "lucide-react";
 
+const DEFAULT_SPECIMEN_TEXT = `다람쥐, ‘헌 쳇바퀴’ 타고파 2026 영문(English) Type: setting 15?! 조판 예문 “123Xx맘01”입니다.`;
+const LEGACY_SPECIMEN_TEXT = `다람쥐, ‘헌 쳇바퀴’ 타고파 2026 영문 (English) Type setting 02 조판 예문 “A맘01”`;
+
+const createDefaultStyleInstances = (): StyleInstance[] => {
+  const koreanFont = KOREAN_FONTS.find(f => f.id === "ibm-plex-sans-kr") || KOREAN_FONTS[0];
+  const englishFont = ENGLISH_FONTS.find(f => f.id === "inter") || ENGLISH_FONTS[0];
+  const baseStyle = {
+    koreanFont,
+    englishFont,
+    fontSizeKo: 24,
+    enScale: 1.08,
+    letterSpacingKo: -0.045,
+    letterSpacingEn: 0,
+    baselineShiftEn: -10,
+    numScale: 1.0,
+    letterSpacingNum: 0,
+    baselineShiftNum: 0,
+    lineHeight: 1.45,
+    textAlign: "center" as const,
+    verticalAlign: "center" as const,
+  };
+
+  return [
+    { ...baseStyle, id: "style-light", name: "light" },
+    { ...baseStyle, id: "style-regular", name: "Regular" },
+    { ...baseStyle, id: "style-medium", name: "medium" },
+    { ...baseStyle, id: "style-bold", name: "Bold" },
+  ];
+};
+
 export default function App() {
   // Safe default fonts
   const initialEnFont = ENGLISH_FONTS.find(f => f.id === "space-grotesk") || ENGLISH_FONTS[0];
@@ -42,64 +72,22 @@ export default function App() {
       const stored = localStorage.getItem("font_harmony_workbench_style_instances");
       if (stored) {
         const parsed = JSON.parse(stored);
-        if (parsed && parsed.length > 0) return parsed;
+        if (parsed && parsed.length > 0) {
+          const hasDefaultWeights = ["style-light", "style-regular", "style-medium", "style-bold"]
+            .every(id => parsed.some((style: StyleInstance) => style.id === id));
+          if (hasDefaultWeights) {
+            return parsed.map((style: StyleInstance) => {
+              if (style.id === "style-light") return { ...style, name: "light" };
+              if (style.id === "style-medium") return { ...style, name: "medium" };
+              return style;
+            });
+          }
+        }
       }
     } catch (e) {
       console.error("Failed to parse styleInstances from localStorage", e);
     }
-    return [
-      {
-        id: "style-light",
-        name: "Light",
-        koreanFont: KOREAN_FONTS.find(f => f.id === "ibm-plex-sans-kr") || KOREAN_FONTS[0],
-        englishFont: ENGLISH_FONTS.find(f => f.id === "inter") || ENGLISH_FONTS[0],
-        fontSizeKo: 24,
-        enScale: 1.08,
-        letterSpacingKo: -0.045,
-        letterSpacingEn: 0,
-        baselineShiftEn: -10,
-        numScale: 1.0,
-        letterSpacingNum: 0,
-        baselineShiftNum: 0,
-        lineHeight: 1.45,
-        textAlign: "center",
-        verticalAlign: "center",
-      },
-      {
-        id: "style-regular",
-        name: "Regular",
-        koreanFont: KOREAN_FONTS.find(f => f.id === "ibm-plex-sans-kr") || KOREAN_FONTS[0],
-        englishFont: ENGLISH_FONTS.find(f => f.id === "inter") || ENGLISH_FONTS[0],
-        fontSizeKo: 24,
-        enScale: 1.08,
-        letterSpacingKo: -0.045,
-        letterSpacingEn: 0,
-        baselineShiftEn: -10,
-        numScale: 1.0,
-        letterSpacingNum: 0,
-        baselineShiftNum: 0,
-        lineHeight: 1.45,
-        textAlign: "center",
-        verticalAlign: "center",
-      },
-      {
-        id: "style-bold",
-        name: "Bold",
-        koreanFont: KOREAN_FONTS.find(f => f.id === "ibm-plex-sans-kr") || KOREAN_FONTS[0],
-        englishFont: ENGLISH_FONTS.find(f => f.id === "inter") || ENGLISH_FONTS[0],
-        fontSizeKo: 24,
-        enScale: 1.08,
-        letterSpacingKo: -0.045,
-        letterSpacingEn: 0,
-        baselineShiftEn: -10,
-        numScale: 1.0,
-        letterSpacingNum: 0,
-        baselineShiftNum: 0,
-        lineHeight: 1.45,
-        textAlign: "center",
-        verticalAlign: "center",
-      }
-    ];
+    return createDefaultStyleInstances();
   });
   const [activeStyleId, setActiveStyleId] = useState<string>(() => {
     const stored = localStorage.getItem("font_harmony_workbench_active_style_id");
@@ -171,10 +159,11 @@ export default function App() {
     
     // Determine default weight name based on count
     let newName = `Weight ${count}`;
-    if (count === 1) newName = "Light";
+    if (count === 1) newName = "light";
     else if (count === 2) newName = "Regular";
-    else if (count === 3) newName = "Bold";
-    else if (count === 4) newName = "Black";
+    else if (count === 3) newName = "medium";
+    else if (count === 4) newName = "Bold";
+    else if (count === 5) newName = "Black";
     
     const currentActive = styleInstances.find(s => s.id === activeStyleId) || styleInstances[0];
     
@@ -284,7 +273,7 @@ export default function App() {
   interface Guideline {
     id: string;
     type: "h" | "v"; // h = horizontal, v = vertical
-    position: number; // percentage (0 to 100) relative to preview card
+    position: number; // percentage (0 to 100); h = text block, v = preview card
   }
 
   const [guidelines, setGuidelines] = useState<{ [styleId: string]: Guideline[] }>(() => {
@@ -297,6 +286,7 @@ export default function App() {
     return {
       "style-light": [],
       "style-regular": [],
+      "style-medium": [],
       "style-bold": [],
     };
   });
@@ -305,6 +295,7 @@ export default function App() {
     const stored = localStorage.getItem("font_harmony_workbench_show_guidelines_global");
     return stored !== "false";
   });
+  const [hiddenGuidelineStyleIds, setHiddenGuidelineStyleIds] = useState<string[]>([]);
   const [selectedGuideline, setSelectedGuideline] = useState<{ styleId: string; id: string } | null>(null);
   const [draggingGuideline, setDraggingGuideline] = useState<{
     styleId: string;
@@ -339,10 +330,12 @@ export default function App() {
       if (!draggingGuideline) return;
 
       const { styleId, id, type } = draggingGuideline;
-      const cardContainer = document.getElementById(`preview-card-${styleId}`);
-      if (!cardContainer) return;
+      const guideElement = type === "h"
+        ? document.getElementById(`preview-text-${styleId}`)
+        : document.getElementById(`preview-card-${styleId}`);
+      if (!guideElement) return;
 
-      const rect = cardContainer.getBoundingClientRect();
+      const rect = guideElement.getBoundingClientRect();
       let percent = 0;
 
       if (type === "h") {
@@ -442,7 +435,7 @@ export default function App() {
   // Direct typing content area
   const [customText, setCustomText] = useState<string>(() => {
     const stored = localStorage.getItem("font_harmony_workbench_custom_text");
-    return stored !== null ? stored : `다람쥐, ‘헌 쳇바퀴’ 타고파 2026 영문 (English) Type setting 02 조판 예문 “A맘01”`;
+    return stored !== null && stored !== LEGACY_SPECIMEN_TEXT ? stored : DEFAULT_SPECIMEN_TEXT;
   });
 
   const setCustomTextWithSmartQuotes = (newText: string) => {
@@ -463,6 +456,7 @@ export default function App() {
   const [scannedFamilies, setScannedFamilies] = useState<string[]>([]); 
   const [scannedSearch, setScannedSearch] = useState<string>("");
   const [isScanning, setIsScanning] = useState<boolean>(false);
+  const [systemFontsLoaded, setSystemFontsLoaded] = useState<boolean>(false);
 
   // Modal States
   const [isUploadOpen, setIsUploadOpen] = useState<boolean>(false);
@@ -482,6 +476,24 @@ export default function App() {
 
   const fontBuffersRef = useRef<{ [fontId: string]: ArrayBuffer }>({});
   const specimenTextareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const createSystemFontMetadata = (familyName: string, language: "KO" | "EN"): FontMetadata => {
+    const safeFamilyId = familyName
+      .toLowerCase()
+      .replace(/[^a-z0-9가-힣]+/gi, "-")
+      .replace(/^-+|-+$/g, "");
+
+    return {
+      id: `local-system-${language.toLowerCase()}-${safeFamilyId || Date.now()}`,
+      name: familyName,
+      apiName: familyName,
+      category: "sans-serif",
+      developer: "기기 설치 글꼴",
+      description: `'${familyName}' — 현재 기기에 설치된 글꼴입니다.`,
+      languages: [language],
+      vibeTags: ["System", "Local"],
+    };
+  };
 
   // Auto-resize the specimen textarea to fit its content precisely
   const adjustTextareaHeight = () => {
@@ -713,59 +725,7 @@ export default function App() {
 
   // Reset workspace
   const handleResetWorkspace = () => {
-    setStyleInstances([
-      {
-        id: "style-light",
-        name: "Light",
-        koreanFont: KOREAN_FONTS.find(f => f.id === "ibm-plex-sans-kr") || KOREAN_FONTS[0],
-        englishFont: ENGLISH_FONTS.find(f => f.id === "inter") || ENGLISH_FONTS[0],
-        fontSizeKo: 24,
-        enScale: 1.08,
-        letterSpacingKo: -0.045,
-        letterSpacingEn: 0,
-        baselineShiftEn: -10,
-        numScale: 1.0,
-        letterSpacingNum: 0,
-        baselineShiftNum: 0,
-        lineHeight: 1.45,
-        textAlign: "center",
-        verticalAlign: "center",
-      },
-      {
-        id: "style-regular",
-        name: "Regular",
-        koreanFont: KOREAN_FONTS.find(f => f.id === "ibm-plex-sans-kr") || KOREAN_FONTS[0],
-        englishFont: ENGLISH_FONTS.find(f => f.id === "inter") || ENGLISH_FONTS[0],
-        fontSizeKo: 24,
-        enScale: 1.08,
-        letterSpacingKo: -0.045,
-        letterSpacingEn: 0,
-        baselineShiftEn: -10,
-        numScale: 1.0,
-        letterSpacingNum: 0,
-        baselineShiftNum: 0,
-        lineHeight: 1.45,
-        textAlign: "center",
-        verticalAlign: "center",
-      },
-      {
-        id: "style-bold",
-        name: "Bold",
-        koreanFont: KOREAN_FONTS.find(f => f.id === "ibm-plex-sans-kr") || KOREAN_FONTS[0],
-        englishFont: ENGLISH_FONTS.find(f => f.id === "inter") || ENGLISH_FONTS[0],
-        fontSizeKo: 24,
-        enScale: 1.08,
-        letterSpacingKo: -0.045,
-        letterSpacingEn: 0,
-        baselineShiftEn: -10,
-        numScale: 1.0,
-        letterSpacingNum: 0,
-        baselineShiftNum: 0,
-        lineHeight: 1.45,
-        textAlign: "center",
-        verticalAlign: "center",
-      }
-    ]);
+    setStyleInstances(createDefaultStyleInstances());
     setActiveStyleId("style-regular");
     setGlobalTextAlign("center");
     setGlobalVerticalAlign("center");
@@ -791,10 +751,11 @@ export default function App() {
       etc: { left: 0, right: 0, shift: 0 },
       number: { left: 0, right: 0, shift: 0 },
     });
-    setCustomTextWithSmartQuotes(`다람쥐, ‘헌 쳇바퀴’ 타고파 2026 영문 (English) Type setting 02 조판 예문 “A맘01”`);
+    setCustomTextWithSmartQuotes(DEFAULT_SPECIMEN_TEXT);
     setGuidelines({
       "style-light": [],
       "style-regular": [],
+      "style-medium": [],
       "style-bold": [],
     });
     setSelectedGuideline(null);
@@ -1150,6 +1111,67 @@ export default function App() {
         type: "error",
         text: `폰트 조회에 실패했습니다: ${err.message || err}`
       });
+    }
+  };
+
+  const loadSystemFontsIntoSelectors = async () => {
+    if (!("queryLocalFonts" in window)) {
+      setUploadMessage({
+        type: "error",
+        text: "현재 실행 환경에서는 설치 글꼴 목록을 직접 읽을 수 없습니다. Chrome/Edge 또는 Electron 환경에서 사용할 수 있습니다."
+      });
+      setIsUploadOpen(true);
+      setUploadModalTab("device");
+      return;
+    }
+
+    setIsScanning(true);
+    setUploadMessage({ type: "info", text: "설치된 글꼴 목록을 불러오는 중입니다..." });
+
+    try {
+      const fontsList = await (window as any).queryLocalFonts();
+      const families = Array.from(new Set<string>(
+        fontsList
+          .map((font: any) => font.family)
+          .filter((family: string | undefined): family is string => Boolean(family) && !family.startsWith("."))
+      )).sort((a, b) => a.localeCompare(b));
+
+      if (families.length === 0) {
+        throw new Error("선택 가능한 설치 글꼴을 찾지 못했습니다.");
+      }
+
+      setScannedFonts(fontsList);
+      setScannedFamilies(families);
+      setCustomKoreanFonts(prev => {
+        const existingIds = new Set(prev.map(font => font.id));
+        const newFonts = families
+          .map(family => createSystemFontMetadata(family, "KO"))
+          .filter(font => !existingIds.has(font.id));
+        return [...newFonts, ...prev];
+      });
+      setCustomEnglishFonts(prev => {
+        const existingIds = new Set(prev.map(font => font.id));
+        const newFonts = families
+          .map(family => createSystemFontMetadata(family, "EN"))
+          .filter(font => !existingIds.has(font.id));
+        return [...newFonts, ...prev];
+      });
+      setSystemFontsLoaded(true);
+      setUploadMessage({
+        type: "success",
+        text: `설치된 글꼴 ${families.length}개를 폰트 선택 목록에 추가했습니다.`
+      });
+      window.setTimeout(() => setUploadMessage(null), 1800);
+    } catch (err: any) {
+      console.error("Local font selector scan error:", err);
+      setUploadMessage({
+        type: "error",
+        text: `설치 글꼴을 불러오지 못했습니다: ${err.message || err}`
+      });
+      setIsUploadOpen(true);
+      setUploadModalTab("device");
+    } finally {
+      setIsScanning(false);
     }
   };
 
@@ -1550,6 +1572,17 @@ export default function App() {
     if (font.id.startsWith("local-")) {
       const buffer = fontBuffersRef.current[font.id];
       if (buffer) return buffer;
+
+      if (font.id.startsWith("local-system-") && scannedFonts.length > 0) {
+        const matchingFontData = scannedFonts.find(f => f.family === font.name);
+        if (matchingFontData) {
+          const blob = await matchingFontData.blob();
+          const systemBuffer = await blob.arrayBuffer();
+          fontBuffersRef.current[font.id] = systemBuffer;
+          return systemBuffer;
+        }
+      }
+
       throw new Error(`로컬 캐시에서 '${font.name}' 폰트 데이터를 찾을 수 없습니다.`);
     }
 
@@ -1563,6 +1596,24 @@ export default function App() {
       console.error(`서체 캐시 proxy 요청 중 에러:`, e);
       throw new Error(`웹 폰트 '${font.name}' 파일을 내려받을 수 없습니다. (상세: ${e.message || e})`);
     }
+  };
+
+  const downloadBlob = (blob: Blob, fileName: string) => {
+    const zipUrl = URL.createObjectURL(blob);
+    const downloadLink = document.createElement("a");
+    downloadLink.href = zipUrl;
+    downloadLink.download = fileName;
+    downloadLink.rel = "noopener";
+    downloadLink.style.display = "none";
+    document.body.appendChild(downloadLink);
+    downloadLink.dispatchEvent(new MouseEvent("click", {
+      bubbles: true,
+      cancelable: true,
+      view: window,
+    }));
+    document.body.removeChild(downloadLink);
+
+    window.setTimeout(() => URL.revokeObjectURL(zipUrl), 30000);
   };
 
   const handleTriggerExport = async () => {
@@ -1580,9 +1631,10 @@ export default function App() {
 
       const zip = new JSZip();
 
-      // Compile each weight inside styleInstances list!
-      for (let sIdx = 0; sIdx < styleInstances.length; sIdx++) {
-        const style = styleInstances[sIdx];
+      if (exportTTF || exportOTF) {
+        // Compile each weight inside styleInstances list!
+        for (let sIdx = 0; sIdx < styleInstances.length; sIdx++) {
+          const style = styleInstances[sIdx];
         
         // Fetch Korean and English font buffers
         const krBuffer = await fetchFontBuffer(style.koreanFont);
@@ -1804,8 +1856,9 @@ export default function App() {
           zip.file(`${cleanFileName}-${styleName}.ttf`, mergedFontBuffer);
         }
 
-        if (exportOTF) {
-          zip.file(`${cleanFileName}-${styleName}.otf`, mergedFontBuffer);
+          if (exportOTF) {
+            zip.file(`${cleanFileName}-${styleName}.otf`, mergedFontBuffer);
+          }
         }
       }
 
@@ -1940,14 +1993,7 @@ Thank you for designing with FontMix Studio!
 
       // Package everything into one single ZIP file to prevent sequential popups
       const zipBlob = await zip.generateAsync({ type: "blob" });
-      const zipUrl = URL.createObjectURL(zipBlob);
-      const downloadLink = document.createElement("a");
-      downloadLink.href = zipUrl;
-      downloadLink.download = `${cleanFileName}_Pack.zip`;
-      document.body.appendChild(downloadLink);
-      downloadLink.click();
-      document.body.removeChild(downloadLink);
-      URL.revokeObjectURL(zipUrl);
+      downloadBlob(zipBlob, `${cleanFileName}_Pack.zip`);
 
       setPackComplete(true);
       setIsPackaging(false);
@@ -2354,6 +2400,7 @@ ${!koreanFont.id.startsWith("local-") ? `@import url('${krGoogleUrl}');` : "/* L
             {styleInstances.map((style) => {
               const idxInfo = styleInstances.findIndex((s) => s.id === style.id);
               const isActive = activeStyleId === style.id;
+              const areGuidelinesVisible = showGuidelinesGlobal && !hiddenGuidelineStyleIds.includes(style.id);
               
               // Helper to update active style properties
               const updateThisStyle = (updates: Partial<StyleInstance>) => {
@@ -2371,9 +2418,9 @@ ${!koreanFont.id.startsWith("local-") ? `@import url('${krGoogleUrl}');` : "/* L
                     // Focus hidden textarea to ensure immediate typing synchronization
                     specimenTextareaRef.current?.focus();
                   }}
-                  className={`border rounded-lg bg-[#FAF9F5] p-6 relative transition-all duration-200 cursor-text flex flex-col min-h-[160px] select-none ${
+                  className={`border rounded-lg bg-[#F5F5F5] p-6 relative transition-all duration-200 cursor-text flex flex-col min-h-[160px] select-none ${
                     isActive
-                      ? "border-[#3D67E6] ring-2 ring-[#3D67E6]/10 shadow-md bg-white"
+                      ? "border-[#3D67E6] ring-2 ring-[#3D67E6]/10 shadow-md"
                       : "border-[#1A1A1A]/10 opacity-70 hover:opacity-100 shadow-xs"
                   }`}
                 >
@@ -2387,7 +2434,7 @@ ${!koreanFont.id.startsWith("local-") ? `@import url('${krGoogleUrl}');` : "/* L
                         onMouseDown={(e) => {
                           e.stopPropagation();
                           e.preventDefault();
-                          const el = document.getElementById(`preview-card-${style.id}`);
+                          const el = document.getElementById(`preview-text-${style.id}`);
                           if (!el) return;
                           const rect = el.getBoundingClientRect();
                           const relativeY = e.clientY - rect.top;
@@ -2454,40 +2501,24 @@ ${!koreanFont.id.startsWith("local-") ? `@import url('${krGoogleUrl}');` : "/* L
                     </>
                   )}
 
-                  {/* Guidelines rendering overlay */}
-                  {showGuidelinesGlobal && (guidelines[style.id] || []).map((guide) => {
+                  {/* Vertical guidelines rendering overlay */}
+                  {areGuidelinesVisible && (guidelines[style.id] || []).map((guide) => {
                     const isSelected = selectedGuideline?.styleId === style.id && selectedGuideline?.id === guide.id;
-                    if (guide.type === "h") {
-                      return (
-                        <div
-                          key={guide.id}
-                          style={{ top: `${guide.position}%` }}
-                          className="absolute left-0 right-0 h-3 -translate-y-1/2 cursor-ns-resize z-30 select-none flex items-center"
-                          onMouseDown={(e) => {
-                            e.stopPropagation();
-                            setSelectedGuideline({ styleId: style.id, id: guide.id });
-                            setDraggingGuideline({ styleId: style.id, id: guide.id, type: "h" });
-                          }}
-                        >
-                          <div className={`w-full h-[1px] transition-colors ${isSelected ? "bg-[#3D67E6]/70" : "bg-[#3D67E6]/30"}`}></div>
-                        </div>
-                      );
-                    } else {
-                      return (
-                        <div
-                          key={guide.id}
-                          style={{ left: `${guide.position}%` }}
-                          className="absolute top-0 bottom-0 w-3 -translate-x-1/2 cursor-ew-resize z-30 select-none flex justify-center"
-                          onMouseDown={(e) => {
-                            e.stopPropagation();
-                            setSelectedGuideline({ styleId: style.id, id: guide.id });
-                            setDraggingGuideline({ styleId: style.id, id: guide.id, type: "v" });
-                          }}
-                        >
-                          <div className={`h-full w-[1px] transition-colors ${isSelected ? "bg-[#3D67E6]/70" : "bg-[#3D67E6]/30"}`}></div>
-                        </div>
-                      );
-                    }
+                    if (guide.type !== "v") return null;
+                    return (
+                      <div
+                        key={guide.id}
+                        style={{ left: `${guide.position}%` }}
+                        className="absolute top-0 bottom-0 w-3 -translate-x-1/2 cursor-ew-resize z-30 select-none flex justify-center"
+                        onMouseDown={(e) => {
+                          e.stopPropagation();
+                          setSelectedGuideline({ styleId: style.id, id: guide.id });
+                          setDraggingGuideline({ styleId: style.id, id: guide.id, type: "v" });
+                        }}
+                      >
+                        <div className={`h-full w-[1px] transition-colors ${isSelected ? "bg-[#3D67E6]/70" : "bg-[#3D67E6]/30"}`}></div>
+                      </div>
+                    );
                   })}
 
                   {/* Card Header Layer */}
@@ -2513,16 +2544,20 @@ ${!koreanFont.id.startsWith("local-") ? `@import url('${krGoogleUrl}');` : "/* L
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          setShowGuidelinesGlobal(!showGuidelinesGlobal);
+                          setHiddenGuidelineStyleIds(prev =>
+                            prev.includes(style.id)
+                              ? prev.filter(id => id !== style.id)
+                              : [...prev, style.id]
+                          );
                         }}
                         className={`p-1 rounded-md transition-all flex items-center justify-center cursor-pointer border ${
-                          showGuidelinesGlobal
+                          areGuidelinesVisible
                             ? "bg-[#3D67E6]/8 text-[#3D67E6] border-[#3D67E6]/25 shadow-xs"
                             : "text-[#1A1A1A]/40 hover:text-[#1A1A1A]/80 border-transparent bg-transparent"
                         }`}
-                        title={showGuidelinesGlobal ? "가이드라인 숨기기 (Hide Guidelines)" : "가이드라인 보이기 (Show Guidelines)"}
+                        title={areGuidelinesVisible ? "가이드라인 숨기기 (Hide Guidelines)" : "가이드라인 보이기 (Show Guidelines)"}
                       >
-                        {showGuidelinesGlobal ? (
+                        {areGuidelinesVisible ? (
                           <Eye className="h-3.5 w-3.5" />
                         ) : (
                           <EyeOff className="h-3.5 w-3.5 text-[#1A1A1A]/40" />
@@ -2542,6 +2577,7 @@ ${!koreanFont.id.startsWith("local-") ? `@import url('${krGoogleUrl}');` : "/* L
                     }`}
                   >
                     <div
+                      id={`preview-text-${style.id}`}
                       style={{
                         lineHeight: style.lineHeight,
                         textAlign: globalTextAlign,
@@ -2549,8 +2585,26 @@ ${!koreanFont.id.startsWith("local-") ? `@import url('${krGoogleUrl}');` : "/* L
                         letterSpacing: `${style.letterSpacingKo}em`,
                         fontFamily: `'${style.englishFont.name}', '${style.koreanFont.name}', sans-serif`,
                       }}
-                      className="w-full break-words whitespace-pre-wrap leading-inherit select-text"
+                      className="relative w-full break-words whitespace-pre-wrap leading-inherit select-text"
                     >
+                      {areGuidelinesVisible && (guidelines[style.id] || []).map((guide) => {
+                        const isSelected = selectedGuideline?.styleId === style.id && selectedGuideline?.id === guide.id;
+                        if (guide.type !== "h") return null;
+                        return (
+                          <div
+                            key={guide.id}
+                            style={{ top: `${guide.position}%` }}
+                            className="absolute left-0 right-0 h-3 -translate-y-1/2 cursor-ns-resize z-30 select-none flex items-center"
+                            onMouseDown={(e) => {
+                              e.stopPropagation();
+                              setSelectedGuideline({ styleId: style.id, id: guide.id });
+                              setDraggingGuideline({ styleId: style.id, id: guide.id, type: "h" });
+                            }}
+                          >
+                            <div className={`w-full h-[1px] transition-colors ${isSelected ? "bg-[#3D67E6]/70" : "bg-[#3D67E6]/30"}`}></div>
+                          </div>
+                        );
+                      })}
                       {renderEditableChars(style, isActive)}
                     </div>
                   </div>
@@ -2671,6 +2725,10 @@ ${!koreanFont.id.startsWith("local-") ? `@import url('${krGoogleUrl}');` : "/* L
 
               {/* Body Content */}
               <div className="p-4 space-y-4 bg-white border-b border-[#1A1A1A]/10">
+                <div className="text-[10px] font-bold text-[#888888] tracking-wider font-sans select-none">
+                  Setting - <span className="text-[#3D67E6]">{activeStyle.name}</span>
+                </div>
+
                 {/* Korean Font Selection (for currently active weight) */}
                 <div className="space-y-2">
                   <div className="flex justify-between items-center text-[10px] font-bold tracking-tight text-[#555555]">
@@ -2681,6 +2739,10 @@ ${!koreanFont.id.startsWith("local-") ? `@import url('${krGoogleUrl}');` : "/* L
                     <select
                       value={koreanFont.id}
                       onChange={(e) => {
+                        if (e.target.value === "__load_system_fonts__") {
+                          loadSystemFontsIntoSelectors();
+                          return;
+                        }
                         const found = allKoreanFonts.find(f => f.id === e.target.value);
                         if (found) {
                           updateActiveStyle({ koreanFont: found });
@@ -2688,9 +2750,17 @@ ${!koreanFont.id.startsWith("local-") ? `@import url('${krGoogleUrl}');` : "/* L
                       }}
                       className="flex-1 bg-white text-[#1a1a1a] border border-[#1a1a1a]/15 rounded px-2.5 py-1.5 text-xs focus:outline-none focus:border-[#3D67E6] font-medium font-sans cursor-pointer shadow-3xs"
                     >
+                      {!allKoreanFonts.some(font => font.id === koreanFont.id) && (
+                        <option value={koreanFont.id}>
+                          {koreanFont.name}
+                        </option>
+                      )}
+                      <option value="__load_system_fonts__" disabled={isScanning}>
+                        {isScanning ? "설치 글꼴 불러오는 중..." : systemFontsLoaded ? "설치 글꼴 새로고침" : "설치 글꼴 불러오기"}
+                      </option>
                       {allKoreanFonts.map(font => (
                         <option key={font.id} value={font.id}>
-                          {font.id.startsWith("local-") ? `⭐ ${font.name}` : font.name}
+                          {font.id.startsWith("local-system-") ? `[Installed] ${font.name}` : font.id.startsWith("local-") ? `[Local] ${font.name}` : font.name}
                         </option>
                       ))}
                     </select>
@@ -2719,6 +2789,10 @@ ${!koreanFont.id.startsWith("local-") ? `@import url('${krGoogleUrl}');` : "/* L
                     <select
                       value={englishFont.id}
                       onChange={(e) => {
+                        if (e.target.value === "__load_system_fonts__") {
+                          loadSystemFontsIntoSelectors();
+                          return;
+                        }
                         const found = allEnglishFonts.find(f => f.id === e.target.value);
                         if (found) {
                           updateActiveStyle({ englishFont: found });
@@ -2726,9 +2800,17 @@ ${!koreanFont.id.startsWith("local-") ? `@import url('${krGoogleUrl}');` : "/* L
                       }}
                       className="flex-1 bg-white text-[#1a1a1a] border border-[#1a1a1a]/15 rounded px-2.5 py-1.5 text-xs focus:outline-none focus:border-[#3D67E6] font-medium font-sans cursor-pointer shadow-3xs"
                     >
+                      {!allEnglishFonts.some(font => font.id === englishFont.id) && (
+                        <option value={englishFont.id}>
+                          {englishFont.name}
+                        </option>
+                      )}
+                      <option value="__load_system_fonts__" disabled={isScanning}>
+                        {isScanning ? "설치 글꼴 불러오는 중..." : systemFontsLoaded ? "설치 글꼴 새로고침" : "설치 글꼴 불러오기"}
+                      </option>
                       {allEnglishFonts.map(font => (
                         <option key={font.id} value={font.id}>
-                          {font.id.startsWith("local-") ? `⭐ ${font.name}` : font.name}
+                          {font.id.startsWith("local-system-") ? `[Installed] ${font.name}` : font.id.startsWith("local-") ? `[Local] ${font.name}` : font.name}
                         </option>
                       ))}
                     </select>
@@ -2751,17 +2833,15 @@ ${!koreanFont.id.startsWith("local-") ? `@import url('${krGoogleUrl}');` : "/* L
 
             {/* 02. PUNCTUATION CONTROL SECTION */}
             <div className="flex flex-col">
-              {/* CHROMISH TAB BAR HEADER FOR PUNCTUATION */}
-              <div className="bg-[#EAE8E4] px-4 flex items-center justify-between select-none h-[35px] shrink-0 border-b border-[#1A1A1A]/5">
-                <span className="text-[10px] font-bold text-[#888888] uppercase tracking-wider font-sans">INDIVIDUAL PUNCTUATION CONTROL</span>
-              </div>
-
               {/* Punctuation control body content */}
-              <div className="p-4 bg-white border-b border-[#1A1A1A]/10">
+              <div className="p-4 bg-white border-b border-[#1A1A1A]/10 space-y-3">
+                <div className="text-[10px] font-bold text-[#888888] tracking-wider font-sans select-none">
+                  Punctuation
+                </div>
                 <div className="grid grid-cols-1 gap-y-2 text-[10px] animate-fade-in pr-1 max-h-[300px] overflow-y-auto custom-sidebar-scrollbar pr-0.5">
                   {[
-                    { id: "period", label: "Period (마침표)", icon: ".", chars: "마침표" },
-                    { id: "comma", label: "Comma (반점)", icon: ",", chars: "반점" },
+                    { id: "period", label: "Period", icon: ".", chars: "마침표" },
+                    { id: "comma", label: "Comma", icon: ",", chars: "반점" },
                     { id: "ques_excl", label: "Question & Excl", icon: "?!", chars: "물음표, 느낌표" },
                     { id: "quotes", label: "Quotation Marks", icon: "‘“", chars: "작은/큰따옴표, 괄호따옴표" },
                     { id: "brackets", label: "Parentheses & Brackets", icon: "()", chars: "괄호 전체 (홑/대/겹괄호 등)" },
@@ -2804,7 +2884,6 @@ ${!koreanFont.id.startsWith("local-") ? `@import url('${krGoogleUrl}');` : "/* L
                           </span>
                           <span className="text-[10.5px] font-bold leading-none flex items-center gap-1">
                             {group.label}
-                            <svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="opacity-40 ml-0.5"><path d="M21 4h-4"/><path d="M14 4H3"/><path d="M12 2v4"/><path d="M21 12H12"/><path d="M9 12H3"/><path d="M12 10v4"/><path d="M21 20H15"/><path d="M12 20H3"/><path d="M15 18v4"/></svg>
                           </span>
                         </button>
                         
@@ -2832,7 +2911,7 @@ ${!koreanFont.id.startsWith("local-") ? `@import url('${krGoogleUrl}');` : "/* L
                           )}
 
                           {/* Font Select Group Toggle (KR / EN) */}
-                          <div className="flex rounded overflow-hidden border border-[#1a1a1a]/12 text-[8.5px] font-bold font-sans h-[22px] bg-white shadow-sm">
+                          <div className="flex rounded overflow-hidden border border-[#1a1a1a]/12 text-[8.5px] font-bold font-sans h-[22px] bg-white">
                             <button
                               type="button"
                               onClick={() => setPuncSettings(prev => ({ ...prev, [group.id]: "ko" }))}
@@ -2860,266 +2939,68 @@ ${!koreanFont.id.startsWith("local-") ? `@import url('${krGoogleUrl}');` : "/* L
             <div className="flex flex-col">
               {/* Balance Parameters sliders row */}
               <div className="p-4 bg-white border-b border-[#1A1A1A]/10 space-y-4">
-                <div className="flex justify-between items-center border-b border-[#1A1A1A]/5 pb-1 select-none">
-                  <div className="text-[10px] font-bold text-[#888888] uppercase tracking-wider font-sans">
-                    BALANCE PARAMETERS — {activeStyle.name}
+                <div className="flex justify-between items-center border-b border-[#1A1A1A]/5 pb-2 select-none">
+                  <div className="text-[10px] font-bold text-[#888888] tracking-wider font-sans">
+                    Setting - <span className="text-[#3D67E6]">{activeStyle.name}</span>
                   </div>
                   <button
                     type="button"
                     onClick={handleApplyActiveStyleToAllWeights}
-                    className="text-[9px] font-black text-[#3D67E6] bg-[#3D67E6]/8 hover:bg-[#3D67E6]/12 border border-[#3D67E6]/12 hover:border-[#3D67E6]/32 px-1.5 py-0.5 rounded transition-all flex items-center gap-1 cursor-pointer font-sans"
-                    title="현재 가중치(Light/Regular/Bold)의 밸런스 균형(크기, 자간, 높이 등) 세팅을 타 가중치에 똑같이 복대합니다."
+                    className="text-[9px] font-black text-[#3D67E6] bg-[#3D67E6]/8 hover:bg-[#3D67E6]/12 border border-[#3D67E6]/12 hover:border-[#3D67E6]/32 px-2 py-1 rounded transition-all cursor-pointer font-sans"
+                    title="현재 가중치의 밸런스 설정(크기, 자간, 높이 등)을 다른 가중치에 똑같이 적용합니다."
                   >
-                    {showSyncSuccess ? (
-                      <>
-                        <Check className="h-2.5 w-2.5 stroke-[3]" />
-                        <span>적용 완료!</span>
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles className="h-2.5 w-2.5 animate-pulse" />
-                        <span>Regular, Bold에 일괄 적용</span>
-                      </>
-                    )}
+                    {showSyncSuccess ? "Applied" : "Apply all"}
                   </button>
                 </div>
 
-                {/* Size & Relative Scale (2 Columns) */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <span className="text-[9px] font-bold text-[#888888] uppercase block pl-0.5 select-none font-sans">Base Size (KO)</span>
-                    <ScrubbableInput
-                      value={fontSizeKo}
-                      onChange={(val) => updateActiveStyle({ fontSizeKo: val })}
-                      min={12}
-                      max={120}
-                      step={1}
-                      label="Base Font Size"
-                      suffix="px"
-                      icon={<span className="font-semibold text-[#3D67E6] font-sans">T</span>}
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <span className="text-[9px] font-bold text-[#888888] uppercase block pl-0.5 select-none font-sans">Relative Scale (EN)</span>
-                    <ScrubbableInput
-                      value={enScale}
-                      onChange={(val) => updateActiveStyle({ enScale: val })}
-                      min={0.50}
-                      max={1.80}
-                      step={0.01}
-                      label="Relative Scale"
-                      suffix="x"
-                      icon={<span className="font-semibold text-[#3D67E6] font-sans">%</span>}
-                    />
-                  </div>
-                </div>
-
-                {/* Letter Spacing (2 Columns) */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <span className="text-[9px] font-bold text-[#888888] uppercase block pl-0.5 select-none font-sans">Letter Spacing (KO)</span>
-                    <ScrubbableInput
-                      value={letterSpacingKo}
-                      onChange={(val) => updateActiveStyle({ letterSpacingKo: val })}
-                      min={-0.12}
-                      max={0.20}
-                      step={0.001}
-                      label="Korean Letter Spacing"
-                      suffix="em"
-                      icon={<span className="font-semibold text-[#3D67E6] font-sans">↔</span>}
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <span className="text-[9px] font-bold text-[#888888] uppercase block pl-0.5 select-none font-sans">Letter Spacing (EN)</span>
-                    <ScrubbableInput
-                      value={letterSpacingEn}
-                      onChange={(val) => updateActiveStyle({ letterSpacingEn: val })}
-                      min={-0.12}
-                      max={0.20}
-                      step={0.001}
-                      label="Latin Letter Spacing"
-                      suffix="em"
-                      icon={<span className="font-semibold text-[#3D67E6] font-sans">↔</span>}
-                    />
-                  </div>
-                </div>
-
-                {/* Baseline Shift & Line Height (2 Columns) */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <span className="text-[9px] font-bold text-[#888888] uppercase block pl-0.5 select-none font-sans">Baseline Shift (EN)</span>
-                    <ScrubbableInput
-                      value={baselineShiftEn}
-                      onChange={(val) => updateActiveStyle({ baselineShiftEn: val })}
-                      min={-20}
-                      max={20}
-                      step={0.1}
-                      label="Latin Baseline Shift"
-                      suffix="%"
-                      icon={<span className="font-semibold text-[#3D67E6] font-sans">↕</span>}
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <span className="text-[9px] font-bold text-[#888888] uppercase block pl-0.5 select-none font-sans">Line Height (W)</span>
-                    <ScrubbableInput
-                      value={lineHeight}
-                      onChange={(val) => updateActiveStyle({ lineHeight: val })}
-                      min={1.0}
-                      max={2.5}
-                      step={0.01}
-                      label="Line Height"
-                      suffix="em"
-                      icon={<span className="font-semibold text-[#3D67E6] font-sans">¶</span>}
-                    />
-                  </div>
-                </div>
-
-                {/* Number Metrics Controls */}
-                <div className="pt-3 border-t border-[#1A1A1A]/8 space-y-3">
-                  <div className="text-[9px] font-bold text-[#888888] uppercase tracking-wider select-none border-b border-[#1A1A1A]/3 pb-1">
-                    Number Custom Metrics (숫자 자간·크기·정렬)
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                      <span className="text-[9px] font-bold text-[#888888] uppercase block pl-0.5 select-none font-sans">Relative Scale (NUM)</span>
-                      <ScrubbableInput
-                        value={numScale}
-                        onChange={(val) => updateActiveStyle({ numScale: val })}
-                        min={0.50}
-                        max={1.80}
-                        step={0.01}
-                        label="Number Scale"
-                        suffix="x"
-                        icon={<span className="font-semibold text-[#3D67E6] font-sans">%</span>}
-                      />
+                <div className="space-y-3">
+                  <div className="grid grid-cols-[32px_repeat(3,minmax(0,1fr))] gap-2 items-end">
+                    <span className="text-[9px] font-black text-[#3D67E6] uppercase tracking-wider select-none font-sans pb-3">KR</span>
+                    <div className="space-y-1.5 min-w-0">
+                      <span className="text-[8.5px] font-bold text-[#888888] uppercase block pl-0.5 select-none font-sans">사이즈</span>
+                      <ScrubbableInput value={fontSizeKo} onChange={(val) => updateActiveStyle({ fontSizeKo: val })} min={12} max={120} step={1} label="Korean Base Size" suffix="px" />
                     </div>
-                    <div className="space-y-1.5">
-                      <span className="text-[9px] font-bold text-[#888888] uppercase block pl-0.5 select-none font-sans">Letter Spacing (NUM)</span>
-                      <ScrubbableInput
-                        value={letterSpacingNum}
-                        onChange={(val) => updateActiveStyle({ letterSpacingNum: val })}
-                        min={-0.12}
-                        max={0.20}
-                        step={0.001}
-                        label="Number Letter Spacing"
-                        suffix="em"
-                        icon={<span className="font-semibold text-[#3D67E6] font-sans">↔</span>}
-                      />
+                    <div className="space-y-1.5 min-w-0">
+                      <span className="text-[8.5px] font-bold text-[#888888] uppercase block pl-0.5 select-none font-sans">자간</span>
+                      <ScrubbableInput value={letterSpacingKo} onChange={(val) => updateActiveStyle({ letterSpacingKo: val })} min={-0.12} max={0.20} step={0.001} label="Korean Letter Spacing" suffix="em" />
+                    </div>
+                    <div className="space-y-1.5 min-w-0">
+                      <span className="text-[8.5px] font-bold text-[#888888] uppercase block pl-0.5 select-none font-sans">행간</span>
+                      <ScrubbableInput value={lineHeight} onChange={(val) => updateActiveStyle({ lineHeight: val })} min={1.0} max={2.5} step={0.01} label="Line Height" suffix="em" />
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                      <span className="text-[9px] font-bold text-[#888888] uppercase block pl-0.5 select-none font-sans">Baseline Shift (NUM)</span>
-                      <ScrubbableInput
-                        value={baselineShiftNum}
-                        onChange={(val) => updateActiveStyle({ baselineShiftNum: val })}
-                        min={-20}
-                        max={20}
-                        step={0.1}
-                        label="Number Baseline Shift"
-                        suffix="%"
-                        icon={<span className="font-semibold text-[#3D67E6] font-sans">↕</span>}
-                      />
+
+                  <div className="grid grid-cols-[32px_repeat(3,minmax(0,1fr))] gap-2 items-end">
+                    <span className="text-[9px] font-black text-[#3D67E6] uppercase tracking-wider select-none font-sans pb-3">EN</span>
+                    <div className="space-y-1.5 min-w-0">
+                      <span className="text-[8.5px] font-bold text-[#888888] uppercase block pl-0.5 select-none font-sans">사이즈</span>
+                      <ScrubbableInput value={enScale} onChange={(val) => updateActiveStyle({ enScale: val })} min={0.50} max={1.80} step={0.01} label="English Relative Scale" suffix="x" />
+                    </div>
+                    <div className="space-y-1.5 min-w-0">
+                      <span className="text-[8.5px] font-bold text-[#888888] uppercase block pl-0.5 select-none font-sans">자간</span>
+                      <ScrubbableInput value={letterSpacingEn} onChange={(val) => updateActiveStyle({ letterSpacingEn: val })} min={-0.12} max={0.20} step={0.001} label="English Letter Spacing" suffix="em" />
+                    </div>
+                    <div className="space-y-1.5 min-w-0">
+                      <span className="text-[8.5px] font-bold text-[#888888] uppercase block pl-0.5 select-none font-sans">베이스라인</span>
+                      <ScrubbableInput value={baselineShiftEn} onChange={(val) => updateActiveStyle({ baselineShiftEn: val })} min={-20} max={20} step={0.1} label="English Baseline" suffix="%" />
                     </div>
                   </div>
-                </div>
-              </div>
-            </div>
 
-            {/* 04. MY SAVED PRESETS / 내 조합 SECTION (Stack Title/Pill Removed) */}
-            <div className="flex flex-col animate-fade-in">
-              <div className="p-4 bg-white border-b border-[#1A1A1A]/10 space-y-3">
-                <div className="text-[10px] font-bold text-[#888888] uppercase tracking-wider select-none border-b border-[#1A1A1A]/5 pb-1 font-sans">
-                  SAVED COMBINATIONS
-                </div>
-
-                {/* Save New Combination Input Field and Button */}
-                <div className="space-y-1.5">
-                  <span className="text-[9px] font-bold text-[#888888] uppercase block pl-0.5 select-none font-sans">현재 밸런스 설정 내 조합으로 저장</span>
-                  <div className="flex gap-1.5">
-                    <input
-                      id="input-new-preset-name"
-                      type="text"
-                      placeholder="조합 이름을 입력하여 저장해보세요..."
-                      value={newPresetName}
-                      onChange={(e) => setNewPresetName(e.target.value)}
-                      className="flex-1 bg-white text-[#1a1a1a] border border-[#1a1a1a]/15 rounded px-2 py-1 text-xs focus:outline-none focus:border-[#3D67E6] font-medium font-sans cursor-text shadow-3xs placeholder-[#1a1a1a]/30"
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          handleSaveCombination(newPresetName);
-                        }
-                      }}
-                    />
-                    <button
-                      id="btn-save-preset"
-                      onClick={() => handleSaveCombination(newPresetName)}
-                      className="bg-[#3D67E6] hover:bg-[#2C52C6] text-white text-[10px] font-bold px-3 py-1 rounded transition-all cursor-pointer flex items-center gap-1 shadow-2xs shrink-0"
-                    >
-                      <Bookmark className="h-3 w-3" />
-                      저장
-                    </button>
+                  <div className="grid grid-cols-[32px_repeat(3,minmax(0,1fr))] gap-2 items-end">
+                    <span className="text-[9px] font-black text-[#3D67E6] uppercase tracking-wider select-none font-sans pb-3">NUM</span>
+                    <div className="space-y-1.5 min-w-0">
+                      <span className="text-[8.5px] font-bold text-[#888888] uppercase block pl-0.5 select-none font-sans">사이즈</span>
+                      <ScrubbableInput value={numScale} onChange={(val) => updateActiveStyle({ numScale: val })} min={0.50} max={1.80} step={0.01} label="Number Relative Scale" suffix="x" />
+                    </div>
+                    <div className="space-y-1.5 min-w-0">
+                      <span className="text-[8.5px] font-bold text-[#888888] uppercase block pl-0.5 select-none font-sans">자간</span>
+                      <ScrubbableInput value={letterSpacingNum} onChange={(val) => updateActiveStyle({ letterSpacingNum: val })} min={-0.12} max={0.20} step={0.001} label="Number Letter Spacing" suffix="em" />
+                    </div>
+                    <div className="space-y-1.5 min-w-0">
+                      <span className="text-[8.5px] font-bold text-[#888888] uppercase block pl-0.5 select-none font-sans">베이스라인</span>
+                      <ScrubbableInput value={baselineShiftNum} onChange={(val) => updateActiveStyle({ baselineShiftNum: val })} min={-20} max={20} step={0.1} label="Number Baseline" suffix="%" />
+                    </div>
                   </div>
-                </div>
-
-                {/* Saved Combination List */}
-                <div className="space-y-1.5">
-                  <span className="text-[9px] font-bold text-[#888888] uppercase block pl-0.5 select-none font-sans">저장된 조합 목록 ({savedCombinations.length})</span>
-                  {savedCombinations.length === 0 ? (
-                    <div className="text-center py-4 border border-dashed border-[#1a1a1a]/10 rounded-lg bg-[#FAF9F6]">
-                      <Heart className="h-4 w-4 text-[#1a1a1a]/20 mx-auto mb-1" />
-                      <p className="text-[9px] font-semibold text-[#1a1a1a]/40 leading-relaxed font-sans">
-                        저장된 조합이 없습니다.<br />위의 설정을 맞춘 후 내 조합으로 저장해 보세요.
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="space-y-1.5 max-h-[160px] overflow-y-auto pr-0.5 custom-sidebar-scrollbar">
-                      {savedCombinations.map((preset) => {
-                        // Generate mini summary text
-                        const primaryInstance = preset.styleInstances?.[0];
-                        const krName = primaryInstance?.koreanFont?.name || "한글 서체";
-                        const enName = primaryInstance?.englishFont?.name || "영문 서체";
-                        const weightsCount = preset.styleInstances?.length || 0;
-                        
-                        return (
-                          <div
-                            key={preset.id}
-                            className="flex items-center justify-between p-2 border border-[#1A1A1A]/8 hover:border-[#3D67E6]/40 rounded bg-white transition-all group"
-                          >
-                            <div className="flex-1 min-w-0 pr-2">
-                              <span className="text-[10px] font-bold text-[#1a1a1a] truncate font-sans block leading-tight">
-                                {preset.name}
-                              </span>
-                              <span className="text-[8.5px] font-mono text-[#1a1a1a]/45 flex items-center gap-1 mt-0.5 leading-none">
-                                <span>{krName} × {enName}</span>
-                                <span className="text-[#3D67E6]/70">•</span>
-                                <span>가중치 {weightsCount}개</span>
-                              </span>
-                            </div>
-
-                            <div className="flex items-center gap-1">
-                              <button
-                                onClick={() => {
-                                  handleLoadCombination(preset);
-                                  specimenTextareaRef.current?.focus();
-                                }}
-                                className="text-[#3D67E6] bg-[#3D67E6]/5 hover:bg-[#3D67E6] hover:text-white px-2 py-0.5 text-[8.5px] font-bold rounded transition-colors cursor-pointer"
-                                title="이 조합의 폰트 페어링 및 밸런스 값 적용"
-                              >
-                                적용
-                              </button>
-                              <button
-                                onClick={() => handleDeleteCombination(preset.id)}
-                                className="text-[#1A1A1A]/30 hover:text-red-600 hover:bg-red-50 p-1 rounded transition-colors cursor-pointer"
-                                title="조합 삭제"
-                              >
-                                <X className="h-3 w-3" />
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
                 </div>
               </div>
             </div>
@@ -3134,13 +3015,6 @@ ${!koreanFont.id.startsWith("local-") ? `@import url('${krGoogleUrl}');` : "/* L
             >
               <Download className="h-4 w-4" />
               EXPORT
-            </button>
-            <button
-              onClick={handleResetWorkspace}
-              className="w-full bg-white hover:bg-[#F3F3F0] text-[#1a1a1a] text-[10.5px] font-bold uppercase tracking-widest py-2.5 transition-all flex items-center justify-center gap-1.5 cursor-pointer border border-[#1a1a1a]/15 rounded font-sans shadow-3xs"
-            >
-              <RefreshCw className="h-3.5 w-3.5 text-[#3D67E6]" />
-              RESET WORKBENCH
             </button>
           </div>
 
@@ -3343,7 +3217,7 @@ ${!koreanFont.id.startsWith("local-") ? `@import url('${krGoogleUrl}');` : "/* L
                     }}
                     className="bg-white border border-[#1A1A1A]/10 hover:border-[#3D67E6] hover:text-[#3D67E6] text-xs font-bold px-3 py-1.5 rounded-lg transition-all cursor-pointer shadow-3xs"
                   >
-                    🇰🇷 모든 파일 한글(KO) 지정
+                    모든 파일 한글(KO) 지정
                   </button>
                   <button
                     type="button"
@@ -3352,7 +3226,7 @@ ${!koreanFont.id.startsWith("local-") ? `@import url('${krGoogleUrl}');` : "/* L
                     }}
                     className="bg-white border border-[#1A1A1A]/10 hover:border-[#3D67E6] hover:text-[#3D67E6] text-xs font-bold px-3 py-1.5 rounded-lg transition-all cursor-pointer shadow-3xs"
                   >
-                    🇺🇸 모든 파일 라틴/영문(EN) 지정
+                    모든 파일 라틴/영문(EN) 지정
                   </button>
                   <button
                     type="button"
@@ -3361,7 +3235,7 @@ ${!koreanFont.id.startsWith("local-") ? `@import url('${krGoogleUrl}');` : "/* L
                     }}
                     className="bg-white border border-[#1A1A1A]/10 hover:border-[#3D67E6] hover:text-[#3D67E6] text-xs font-bold px-3 py-1.5 rounded-lg transition-all cursor-pointer shadow-3xs"
                   >
-                    ✨ 모두 새 가중치 탭 개설
+                    모두 새 가중치 탭 개설
                   </button>
                   <button
                     type="button"
@@ -3370,7 +3244,7 @@ ${!koreanFont.id.startsWith("local-") ? `@import url('${krGoogleUrl}');` : "/* L
                     }}
                     className="bg-white border border-[#1A1A1A]/10 hover:border-[#3D67E6] hover:text-[#3D67E6] text-xs font-bold px-3 py-1.5 rounded-lg transition-all cursor-pointer shadow-3xs"
                   >
-                    📥 모두 보관함 등록만 (미지정)
+                    모두 보관함 등록만 (미지정)
                   </button>
                 </div>
               </div>
@@ -3467,11 +3341,11 @@ ${!koreanFont.id.startsWith("local-") ? `@import url('${krGoogleUrl}');` : "/* L
                             }}
                             className="bg-white text-[10px] font-bold border border-[#1A1A1A]/10 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-[#3D67E6] cursor-pointer shadow-3xs"
                           >
-                            <option value="new_weight">✨ 새 가중치(세트)로 추가</option>
-                            <option value="none">📥 라이브러리에만 추가 (미지정)</option>
+                            <option value="new_weight">새 가중치(세트)로 추가</option>
+                            <option value="none">라이브러리에만 추가 (미지정)</option>
                             {styleInstances.map((style) => (
                               <option key={style.id} value={style.id}>
-                                🎯 가중치: {style.name}에 할당
+                                가중치: {style.name}에 할당
                               </option>
                             ))}
                           </select>
@@ -3588,7 +3462,7 @@ ${!koreanFont.id.startsWith("local-") ? `@import url('${krGoogleUrl}');` : "/* L
                     : "border-transparent text-[#1A1A1A]/50 hover:bg-black/5 hover:text-[#1A1A1A]"
                 }`}
               >
-                📁 파일로 업로드 (.ttf, .otf 등)
+                파일로 업로드 (.ttf, .otf 등)
               </button>
               <button
                 onClick={() => setUploadModalTab("device")}
@@ -3598,7 +3472,7 @@ ${!koreanFont.id.startsWith("local-") ? `@import url('${krGoogleUrl}');` : "/* L
                     : "border-transparent text-[#1A1A1A]/50 hover:bg-black/5 hover:text-[#1A1A1A]"
                 }`}
               >
-                💻 내 컴퓨터 폰트 바로 선택/등록
+                내 컴퓨터 폰트 바로 선택/등록
               </button>
             </div>
 
@@ -3687,7 +3561,7 @@ ${!koreanFont.id.startsWith("local-") ? `@import url('${krGoogleUrl}');` : "/* L
                         disabled={isScanning}
                         className="w-full bg-white border border-[#3D67E6] text-[#3D67E6] hover:bg-[#3D67E6]/5 transition-all text-xs font-bold py-2 rounded flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                       >
-                        {isScanning ? "스캔 분석 및 동기화 중..." : "🎯 설치된 폰트 불러오기 및 스캔"}
+                        {isScanning ? "스캔 분석 및 동기화 중..." : "설치된 폰트 불러오기 및 스캔"}
                       </button>
                     ) : (
                       <div className="space-y-2 pt-1">

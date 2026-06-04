@@ -18,3 +18,14 @@ View your app in AI Studio: https://ai.studio/apps/fa663520-2020-453d-a4bc-388b2
 2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
 3. Run the app:
    `npm run dev`
+
+## Run as a desktop app
+
+This project includes a minimal Electron shell for local desktop testing.
+
+1. Install dependencies:
+   `npm install`
+2. Start the web server and Electron window together:
+   `npm run electron:dev`
+
+The Electron shell loads the existing app from `http://localhost:3000`, so web development can continue normally while desktop behavior is tested in parallel.

@@ -5,6 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
+    "dev:local": "PORT=3010 HOST=127.0.0.1 DISABLE_HMR=true tsx server.ts",
+    "electron": "electron electron/main.cjs",
+    "electron:local": "ELECTRON_START_URL=http://localhost:3010 electron electron/main.cjs",
+    "electron:dev": "concurrently -k \"PORT=3010 HOST=127.0.0.1 DISABLE_HMR=true tsx server.ts\" \"wait-on http://localhost:3010 && ELECTRON_START_URL=http://localhost:3010 electron electron/main.cjs\"",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
     "preview": "vite preview",
@@ -31,10 +35,13 @@
     "@types/node": "^22.14.0",
     "@types/opentype.js": "^1.3.10",
     "autoprefixer": "^10.4.21",
+    "concurrently": "^10.0.3",
+    "electron": "^42.3.3",
     "esbuild": "^0.25.0",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
-    "vite": "^6.2.3"
+    "vite": "^6.2.3",
+    "wait-on": "^9.0.10"
   }
 }

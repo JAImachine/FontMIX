@@ -11,11 +11,11 @@ interface AIRecommenderProps {
 type HasKoreanFonts = FontMetadata;
 
 const CONCEPT_TAGS = [
-  { label: "💄 코스메틱 매거진", value: "우아하고 고급적인 하이엔드 뷰티 코스메틱 브랜딩" },
-  { label: "🍵 미니멀 차 도서", value: "평온하고 고즈넉한 무드의 핸드드립 찻집 로고 및 도서" },
-  { label: "💻 테크 서비스 제안", value: "미래지향적이고 구조적 신뢰감이 두드러진 테크 서비스 제안서" },
-  { label: "📚 레트로 문학 에세이", value: "옛 인쇄기 질감과 두툼한 찰기가 도는 아날로그 문학 동호회" },
-  { label: "🎨 비주얼 전시 포스터", value: "아방가르드하고 조형미가 가득 찬 현대 미술 전시회 설명 장치" }
+  { label: "코스메틱 매거진", value: "우아하고 고급적인 하이엔드 뷰티 코스메틱 브랜딩" },
+  { label: "미니멀 차 도서", value: "평온하고 고즈넉한 무드의 핸드드립 찻집 로고 및 도서" },
+  { label: "테크 서비스 제안", value: "미래지향적이고 구조적 신뢰감이 두드러진 테크 서비스 제안서" },
+  { label: "레트로 문학 에세이", value: "옛 인쇄기 질감과 두툼한 찰기가 도는 아날로그 문학 동호회" },
+  { label: "비주얼 전시 포스터", value: "아방가르드하고 조형미가 가득 찬 현대 미술 전시회 설명 장치" }
 ];
 
 export default function AIRecommender({
