@@ -1,3 +1,5 @@
 node_modules/
 fontmix-studio/node_modules/
 fontmix-studio/dist/
+.DS_Store
+**/.DS_Store
