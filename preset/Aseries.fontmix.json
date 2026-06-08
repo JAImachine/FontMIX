@@ -1,0 +1,362 @@
+{
+  "app": "FontMix Studio",
+  "version": 1,
+  "savedAt": "2026-06-08T06:48:16.633Z",
+  "name": "Aseries",
+  "punctuationRule": "individual",
+  "puncSettings": {
+    "period": "ko",
+    "comma": "en",
+    "ques_excl": "en",
+    "quotes": "en",
+    "brackets": "en",
+    "math_dash": "en",
+    "colon_semicolon": "en",
+    "etc": "en",
+    "number": "en"
+  },
+  "puncOffsets": {
+    "period": {
+      "left": 0.03,
+      "right": 0,
+      "shift": 0
+    },
+    "comma": {
+      "left": 0,
+      "right": 0,
+      "shift": 0
+    },
+    "ques_excl": {
+      "left": 0.02,
+      "right": 0.02,
+      "shift": 0
+    },
+    "quotes": {
+      "left": 0.03,
+      "right": 0.03,
+      "shift": 10
+    },
+    "brackets": {
+      "left": 0.04,
+      "right": 0.02,
+      "shift": 10
+    },
+    "math_dash": {
+      "left": 0,
+      "right": 0,
+      "shift": 0
+    },
+    "colon_semicolon": {
+      "left": 0,
+      "right": 0,
+      "shift": 0
+    },
+    "etc": {
+      "left": 0,
+      "right": 0,
+      "shift": 0
+    },
+    "number": {
+      "left": 0,
+      "right": 0,
+      "shift": 0
+    }
+  },
+  "styleInstances": [
+    {
+      "koreanFont": {
+        "id": "ibm-plex-sans-kr",
+        "name": "IBM Plex Sans KR",
+        "apiName": "IBM+Plex+Sans+KR",
+        "category": "sans-serif",
+        "developer": "IBM & Sandoll",
+        "description": "기계적인 정밀함과 인간적인 부드러움의 충돌을 멋지게 소화해 내어 차갑고 고급스러운 엔지니어 성향을 보여줍니다.",
+        "languages": [
+          "KO",
+          "EN"
+        ],
+        "vibeTags": [
+          "Tech",
+          "Industrial",
+          "Professional",
+          "Sharp"
+        ]
+      },
+      "englishFont": {
+        "id": "local-1780899688249-0-575",
+        "name": "Local A100Nobel L Light",
+        "apiName": "Local A100Nobel L Light",
+        "category": "sans-serif",
+        "developer": "Local uploaded font (batch)",
+        "description": "A100NobelL-Light.ttf was imported through batch drag and drop.",
+        "languages": [
+          "EN"
+        ],
+        "vibeTags": [
+          "Uploaded",
+          "Batch"
+        ]
+      },
+      "fontSizeKo": 20,
+      "enScale": 1.07,
+      "letterSpacingKo": -0.04,
+      "letterSpacingEn": -0.01,
+      "baselineShiftEn": -8,
+      "numScale": 1.06,
+      "letterSpacingNum": 0,
+      "baselineShiftNum": -9,
+      "lineHeight": 1.5,
+      "textAlign": "center",
+      "verticalAlign": "center",
+      "id": "style-light",
+      "name": "light"
+    },
+    {
+      "koreanFont": {
+        "id": "local-1780899688269-4-147",
+        "name": "Local A400SDGothic Neo R Regular",
+        "apiName": "Local A400SDGothic Neo R Regular",
+        "category": "sans-serif",
+        "developer": "Local uploaded font (batch)",
+        "description": "A400SDGothicNeoR-Regular.ttf was imported through batch drag and drop.",
+        "languages": [
+          "KO"
+        ],
+        "vibeTags": [
+          "Uploaded",
+          "Batch"
+        ]
+      },
+      "englishFont": {
+        "id": "local-1780899688250-1-129",
+        "name": "Local A200Nobel Book Regular",
+        "apiName": "Local A200Nobel Book Regular",
+        "category": "sans-serif",
+        "developer": "Local uploaded font (batch)",
+        "description": "A200NobelBook-Regular.ttf was imported through batch drag and drop.",
+        "languages": [
+          "EN"
+        ],
+        "vibeTags": [
+          "Uploaded",
+          "Batch"
+        ]
+      },
+      "fontSizeKo": 20,
+      "enScale": 1.07,
+      "letterSpacingKo": -0.04,
+      "letterSpacingEn": -0.01,
+      "baselineShiftEn": -8,
+      "numScale": 1.06,
+      "letterSpacingNum": 0,
+      "baselineShiftNum": -9,
+      "lineHeight": 1.5,
+      "textAlign": "center",
+      "verticalAlign": "center",
+      "id": "style-regular",
+      "name": "Regular"
+    },
+    {
+      "koreanFont": {
+        "id": "local-1780899688299-5-214",
+        "name": "Local A500SDGothic Neo SB Semi Bold",
+        "apiName": "Local A500SDGothic Neo SB Semi Bold",
+        "category": "sans-serif",
+        "developer": "Local uploaded font (batch)",
+        "description": "A500SDGothicNeoSB-SemiBold.ttf was imported through batch drag and drop.",
+        "languages": [
+          "KO"
+        ],
+        "vibeTags": [
+          "Uploaded",
+          "Batch"
+        ]
+      },
+      "englishFont": {
+        "id": "local-1780899688251-2-564",
+        "name": "Local A300Nobel R Regular",
+        "apiName": "Local A300Nobel R Regular",
+        "category": "sans-serif",
+        "developer": "Local uploaded font (batch)",
+        "description": "A300NobelR-Regular.ttf was imported through batch drag and drop.",
+        "languages": [
+          "EN"
+        ],
+        "vibeTags": [
+          "Uploaded",
+          "Batch"
+        ]
+      },
+      "fontSizeKo": 20,
+      "enScale": 1.07,
+      "letterSpacingKo": -0.04,
+      "letterSpacingEn": -0.01,
+      "baselineShiftEn": -8,
+      "numScale": 1.06,
+      "letterSpacingNum": 0,
+      "baselineShiftNum": -9,
+      "lineHeight": 1.5,
+      "textAlign": "center",
+      "verticalAlign": "center",
+      "id": "style-medium",
+      "name": "medium"
+    },
+    {
+      "koreanFont": {
+        "id": "local-1780899688318-6-704",
+        "name": "Local A600SDGothic Neo B Bold",
+        "apiName": "Local A600SDGothic Neo B Bold",
+        "category": "sans-serif",
+        "developer": "Local uploaded font (batch)",
+        "description": "A600SDGothicNeoB-Bold.ttf was imported through batch drag and drop.",
+        "languages": [
+          "KO"
+        ],
+        "vibeTags": [
+          "Uploaded",
+          "Batch"
+        ]
+      },
+      "englishFont": {
+        "id": "local-1780899688252-3-296",
+        "name": "Local A400Nobel B Bold",
+        "apiName": "Local A400Nobel B Bold",
+        "category": "sans-serif",
+        "developer": "Local uploaded font (batch)",
+        "description": "A400NobelB-Bold.ttf was imported through batch drag and drop.",
+        "languages": [
+          "EN"
+        ],
+        "vibeTags": [
+          "Uploaded",
+          "Batch"
+        ]
+      },
+      "fontSizeKo": 20,
+      "enScale": 1.07,
+      "letterSpacingKo": -0.04,
+      "letterSpacingEn": -0.01,
+      "baselineShiftEn": -8,
+      "numScale": 1.06,
+      "letterSpacingNum": 0,
+      "baselineShiftNum": -9,
+      "lineHeight": 1.5,
+      "textAlign": "center",
+      "verticalAlign": "center",
+      "id": "style-bold",
+      "name": "Bold"
+    }
+  ],
+  "activeStyleId": "style-regular",
+  "globalTextAlign": "center",
+  "globalVerticalAlign": "center",
+  "customKoreanFonts": [
+    {
+      "id": "local-1780899688269-4-147",
+      "name": "Local A400SDGothic Neo R Regular",
+      "apiName": "Local A400SDGothic Neo R Regular",
+      "category": "sans-serif",
+      "developer": "Local uploaded font (batch)",
+      "description": "A400SDGothicNeoR-Regular.ttf was imported through batch drag and drop.",
+      "languages": [
+        "KO"
+      ],
+      "vibeTags": [
+        "Uploaded",
+        "Batch"
+      ]
+    },
+    {
+      "id": "local-1780899688299-5-214",
+      "name": "Local A500SDGothic Neo SB Semi Bold",
+      "apiName": "Local A500SDGothic Neo SB Semi Bold",
+      "category": "sans-serif",
+      "developer": "Local uploaded font (batch)",
+      "description": "A500SDGothicNeoSB-SemiBold.ttf was imported through batch drag and drop.",
+      "languages": [
+        "KO"
+      ],
+      "vibeTags": [
+        "Uploaded",
+        "Batch"
+      ]
+    },
+    {
+      "id": "local-1780899688318-6-704",
+      "name": "Local A600SDGothic Neo B Bold",
+      "apiName": "Local A600SDGothic Neo B Bold",
+      "category": "sans-serif",
+      "developer": "Local uploaded font (batch)",
+      "description": "A600SDGothicNeoB-Bold.ttf was imported through batch drag and drop.",
+      "languages": [
+        "KO"
+      ],
+      "vibeTags": [
+        "Uploaded",
+        "Batch"
+      ]
+    }
+  ],
+  "customEnglishFonts": [
+    {
+      "id": "local-1780899688249-0-575",
+      "name": "Local A100Nobel L Light",
+      "apiName": "Local A100Nobel L Light",
+      "category": "sans-serif",
+      "developer": "Local uploaded font (batch)",
+      "description": "A100NobelL-Light.ttf was imported through batch drag and drop.",
+      "languages": [
+        "EN"
+      ],
+      "vibeTags": [
+        "Uploaded",
+        "Batch"
+      ]
+    },
+    {
+      "id": "local-1780899688250-1-129",
+      "name": "Local A200Nobel Book Regular",
+      "apiName": "Local A200Nobel Book Regular",
+      "category": "sans-serif",
+      "developer": "Local uploaded font (batch)",
+      "description": "A200NobelBook-Regular.ttf was imported through batch drag and drop.",
+      "languages": [
+        "EN"
+      ],
+      "vibeTags": [
+        "Uploaded",
+        "Batch"
+      ]
+    },
+    {
+      "id": "local-1780899688251-2-564",
+      "name": "Local A300Nobel R Regular",
+      "apiName": "Local A300Nobel R Regular",
+      "category": "sans-serif",
+      "developer": "Local uploaded font (batch)",
+      "description": "A300NobelR-Regular.ttf was imported through batch drag and drop.",
+      "languages": [
+        "EN"
+      ],
+      "vibeTags": [
+        "Uploaded",
+        "Batch"
+      ]
+    },
+    {
+      "id": "local-1780899688252-3-296",
+      "name": "Local A400Nobel B Bold",
+      "apiName": "Local A400Nobel B Bold",
+      "category": "sans-serif",
+      "developer": "Local uploaded font (batch)",
+      "description": "A400NobelB-Bold.ttf was imported through batch drag and drop.",
+      "languages": [
+        "EN"
+      ],
+      "vibeTags": [
+        "Uploaded",
+        "Batch"
+      ]
+    }
+  ]
+}

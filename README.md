@@ -1,3 +1,31 @@
-# FontMIX
-06012026-Today FontMix APP
-Migraiton Google AI studio -> ChatGPT Codex 
+<div align="center">
+<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
+</div>
+
+# Run and deploy your AI Studio app
+
+This contains everything you need to run your app locally.
+
+View your app in AI Studio: https://ai.studio/apps/fa663520-2020-453d-a4bc-388b276d8828
+
+## Run Locally
+
+**Prerequisites:**  Node.js
+
+
+1. Install dependencies:
+   `npm install`
+2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
+3. Run the app:
+   `npm run dev`
+
+## Run as a desktop app
+
+This project includes a minimal Electron shell for local desktop testing.
+
+1. Install dependencies:
+   `npm install`
+2. Start the web server and Electron window together:
+   `npm run electron:dev`
+
+The Electron shell loads the existing app from `http://localhost:3000`, so web development can continue normally while desktop behavior is tested in parallel.

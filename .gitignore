@@ -1,5 +1,6 @@
 node_modules/
-fontmix-studio/node_modules/
-fontmix-studio/dist/
+dist/
+.npm-cache/
 .DS_Store
-**/.DS_Store
+*.log
+.env

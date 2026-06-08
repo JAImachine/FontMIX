@@ -1,0 +1,6 @@
+{
+  "name": "FontMix Studio",
+  "description": "한글과 영문 폰트를 아름답게 섞어 가독성 높은 조화로운 한영 서체 패밀리를 설계하고 CSS unicode-range 코드를 즉시 추출해 주는 하이브리드 타이포그래피 서비스입니다.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
