@@ -1,0 +1,434 @@
+{
+  "app": "FontMix Studio",
+  "version": 1,
+  "savedAt": "2026-06-11T07:29:26.811Z",
+  "name": "프리셋01",
+  "punctuationRule": "individual",
+  "puncSettings": {
+    "period": "ko",
+    "comma": "en",
+    "ques_excl": "en",
+    "quotes": "en",
+    "brackets": "en",
+    "math_dash": "en",
+    "colon_semicolon": "en",
+    "etc": "en",
+    "number": "en"
+  },
+  "puncOffsets": {
+    "period": {
+      "left": 0.03,
+      "right": 0,
+      "shift": 0
+    },
+    "comma": {
+      "left": 0,
+      "right": 0,
+      "shift": 0
+    },
+    "ques_excl": {
+      "left": 0.02,
+      "right": 0.02,
+      "shift": 0
+    },
+    "quotes": {
+      "left": 0.03,
+      "right": 0.03,
+      "shift": 10
+    },
+    "brackets": {
+      "left": 0.04,
+      "right": 0.02,
+      "shift": 10
+    },
+    "math_dash": {
+      "left": 0,
+      "right": 0,
+      "shift": 0
+    },
+    "colon_semicolon": {
+      "left": 0,
+      "right": 0,
+      "shift": 0
+    },
+    "etc": {
+      "left": 0,
+      "right": 0,
+      "shift": 0
+    },
+    "number": {
+      "left": 0,
+      "right": 0,
+      "shift": 0
+    }
+  },
+  "styleInstances": [
+    {
+      "koreanFont": {
+        "id": "system-ko-a400sdgothicneor-regular",
+        "name": "A400SDGothicNeoR Regular",
+        "apiName": "A400SDGothicNeoR",
+        "category": "sans-serif",
+        "developer": "macOS Font Book",
+        "description": "A400SDGothicNeoR Regular is referenced from installed macOS fonts.",
+        "languages": [
+          "KO"
+        ],
+        "vibeTags": [
+          "System",
+          "FontBook"
+        ],
+        "source": "system",
+        "familyName": "A400SDGothicNeoR",
+        "fullName": "A400SDGothicNeoR Regular",
+        "postscriptName": "A400SDGothicNeoR-Regular",
+        "styleName": "Regular"
+      },
+      "englishFont": {
+        "id": "system-en-a100nobell-light",
+        "name": "A100NobelL Light",
+        "apiName": "A100NobelL",
+        "category": "sans-serif",
+        "developer": "macOS Font Book",
+        "description": "A100NobelL Light is referenced from installed macOS fonts.",
+        "languages": [
+          "EN"
+        ],
+        "vibeTags": [
+          "System",
+          "FontBook"
+        ],
+        "source": "system",
+        "familyName": "A100NobelL",
+        "fullName": "A100NobelL Light",
+        "postscriptName": "A100NobelL-Light",
+        "styleName": "Light"
+      },
+      "fontSizeKo": 24,
+      "enScale": 1.07,
+      "letterSpacingKo": -0.04,
+      "letterSpacingEn": -0.01,
+      "baselineShiftEn": -9,
+      "numScale": 1.06,
+      "letterSpacingNum": 0,
+      "baselineShiftNum": -9,
+      "lineHeight": 1.5,
+      "textAlign": "center",
+      "verticalAlign": "center",
+      "id": "style-light",
+      "name": "light"
+    },
+    {
+      "koreanFont": {
+        "id": "system-ko-a400sdgothicneor-regular",
+        "name": "A400SDGothicNeoR Regular",
+        "apiName": "A400SDGothicNeoR",
+        "category": "sans-serif",
+        "developer": "macOS Font Book",
+        "description": "A400SDGothicNeoR Regular is referenced from installed macOS fonts.",
+        "languages": [
+          "KO"
+        ],
+        "vibeTags": [
+          "System",
+          "FontBook"
+        ],
+        "source": "system",
+        "familyName": "A400SDGothicNeoR",
+        "fullName": "A400SDGothicNeoR Regular",
+        "postscriptName": "A400SDGothicNeoR-Regular",
+        "styleName": "Regular"
+      },
+      "englishFont": {
+        "id": "system-en-a200nobelbook-regular",
+        "name": "A200NobelBook Regular",
+        "apiName": "A200NobelBook",
+        "category": "sans-serif",
+        "developer": "macOS Font Book",
+        "description": "A200NobelBook Regular is referenced from installed macOS fonts.",
+        "languages": [
+          "EN"
+        ],
+        "vibeTags": [
+          "System",
+          "FontBook"
+        ],
+        "source": "system",
+        "familyName": "A200NobelBook",
+        "fullName": "A200NobelBook Regular",
+        "postscriptName": "A200NobelBook-Regular",
+        "styleName": "Regular"
+      },
+      "fontSizeKo": 24,
+      "enScale": 1.07,
+      "letterSpacingKo": -0.04,
+      "letterSpacingEn": -0.01,
+      "baselineShiftEn": -9,
+      "numScale": 1.06,
+      "letterSpacingNum": 0,
+      "baselineShiftNum": -9,
+      "lineHeight": 1.5,
+      "textAlign": "center",
+      "verticalAlign": "center",
+      "id": "style-regular",
+      "name": "Regular"
+    },
+    {
+      "koreanFont": {
+        "id": "system-ko-a500sdgothicneosb-semibold",
+        "name": "A500SDGothicNeoSB SemiBold",
+        "apiName": "A500SDGothicNeoSB",
+        "category": "sans-serif",
+        "developer": "macOS Font Book",
+        "description": "A500SDGothicNeoSB SemiBold is referenced from installed macOS fonts.",
+        "languages": [
+          "KO"
+        ],
+        "vibeTags": [
+          "System",
+          "FontBook"
+        ],
+        "source": "system",
+        "familyName": "A500SDGothicNeoSB",
+        "fullName": "A500SDGothicNeoSB SemiBold",
+        "postscriptName": "A500SDGothicNeoSB-SemiBold",
+        "styleName": "SemiBold"
+      },
+      "englishFont": {
+        "id": "system-en-a300nobelr-regular",
+        "name": "A300NobelR Regular",
+        "apiName": "A300NobelR",
+        "category": "sans-serif",
+        "developer": "macOS Font Book",
+        "description": "A300NobelR Regular is referenced from installed macOS fonts.",
+        "languages": [
+          "EN"
+        ],
+        "vibeTags": [
+          "System",
+          "FontBook"
+        ],
+        "source": "system",
+        "familyName": "A300NobelR",
+        "fullName": "A300NobelR Regular",
+        "postscriptName": "A300NobelR-Regular",
+        "styleName": "Regular"
+      },
+      "fontSizeKo": 24,
+      "enScale": 1.07,
+      "letterSpacingKo": -0.04,
+      "letterSpacingEn": -0.01,
+      "baselineShiftEn": -9,
+      "numScale": 1.06,
+      "letterSpacingNum": 0,
+      "baselineShiftNum": -9,
+      "lineHeight": 1.5,
+      "textAlign": "center",
+      "verticalAlign": "center",
+      "id": "style-medium",
+      "name": "medium"
+    },
+    {
+      "koreanFont": {
+        "id": "system-ko-a600sdgothicneob-bold",
+        "name": "A600SDGothicNeoB Bold",
+        "apiName": "A600SDGothicNeoB",
+        "category": "sans-serif",
+        "developer": "macOS Font Book",
+        "description": "A600SDGothicNeoB Bold is referenced from installed macOS fonts.",
+        "languages": [
+          "KO"
+        ],
+        "vibeTags": [
+          "System",
+          "FontBook"
+        ],
+        "source": "system",
+        "familyName": "A600SDGothicNeoB",
+        "fullName": "A600SDGothicNeoB Bold",
+        "postscriptName": "A600SDGothicNeoB-Bold",
+        "styleName": "Bold"
+      },
+      "englishFont": {
+        "id": "system-en-a400nobelb-bold",
+        "name": "A400NobelB Bold",
+        "apiName": "A400NobelB",
+        "category": "sans-serif",
+        "developer": "macOS Font Book",
+        "description": "A400NobelB Bold is referenced from installed macOS fonts.",
+        "languages": [
+          "EN"
+        ],
+        "vibeTags": [
+          "System",
+          "FontBook"
+        ],
+        "source": "system",
+        "familyName": "A400NobelB",
+        "fullName": "A400NobelB Bold",
+        "postscriptName": "A400NobelB-Bold",
+        "styleName": "Bold"
+      },
+      "fontSizeKo": 24,
+      "enScale": 1.07,
+      "letterSpacingKo": -0.04,
+      "letterSpacingEn": -0.01,
+      "baselineShiftEn": -9,
+      "numScale": 1.06,
+      "letterSpacingNum": 0,
+      "baselineShiftNum": -9,
+      "lineHeight": 1.5,
+      "textAlign": "center",
+      "verticalAlign": "center",
+      "id": "style-bold",
+      "name": "Bold"
+    }
+  ],
+  "activeStyleId": "style-regular",
+  "globalTextAlign": "center",
+  "globalVerticalAlign": "center",
+  "customKoreanFonts": [
+    {
+      "id": "system-ko-a400sdgothicneor-regular",
+      "name": "A400SDGothicNeoR Regular",
+      "apiName": "A400SDGothicNeoR",
+      "category": "sans-serif",
+      "developer": "macOS Font Book",
+      "description": "A400SDGothicNeoR Regular is referenced from installed macOS fonts.",
+      "languages": [
+        "KO"
+      ],
+      "vibeTags": [
+        "System",
+        "FontBook"
+      ],
+      "source": "system",
+      "familyName": "A400SDGothicNeoR",
+      "fullName": "A400SDGothicNeoR Regular",
+      "postscriptName": "A400SDGothicNeoR-Regular",
+      "styleName": "Regular"
+    },
+    {
+      "id": "system-ko-a500sdgothicneosb-semibold",
+      "name": "A500SDGothicNeoSB SemiBold",
+      "apiName": "A500SDGothicNeoSB",
+      "category": "sans-serif",
+      "developer": "macOS Font Book",
+      "description": "A500SDGothicNeoSB SemiBold is referenced from installed macOS fonts.",
+      "languages": [
+        "KO"
+      ],
+      "vibeTags": [
+        "System",
+        "FontBook"
+      ],
+      "source": "system",
+      "familyName": "A500SDGothicNeoSB",
+      "fullName": "A500SDGothicNeoSB SemiBold",
+      "postscriptName": "A500SDGothicNeoSB-SemiBold",
+      "styleName": "SemiBold"
+    },
+    {
+      "id": "system-ko-a600sdgothicneob-bold",
+      "name": "A600SDGothicNeoB Bold",
+      "apiName": "A600SDGothicNeoB",
+      "category": "sans-serif",
+      "developer": "macOS Font Book",
+      "description": "A600SDGothicNeoB Bold is referenced from installed macOS fonts.",
+      "languages": [
+        "KO"
+      ],
+      "vibeTags": [
+        "System",
+        "FontBook"
+      ],
+      "source": "system",
+      "familyName": "A600SDGothicNeoB",
+      "fullName": "A600SDGothicNeoB Bold",
+      "postscriptName": "A600SDGothicNeoB-Bold",
+      "styleName": "Bold"
+    }
+  ],
+  "customEnglishFonts": [
+    {
+      "id": "system-en-a100nobell-light",
+      "name": "A100NobelL Light",
+      "apiName": "A100NobelL",
+      "category": "sans-serif",
+      "developer": "macOS Font Book",
+      "description": "A100NobelL Light is referenced from installed macOS fonts.",
+      "languages": [
+        "EN"
+      ],
+      "vibeTags": [
+        "System",
+        "FontBook"
+      ],
+      "source": "system",
+      "familyName": "A100NobelL",
+      "fullName": "A100NobelL Light",
+      "postscriptName": "A100NobelL-Light",
+      "styleName": "Light"
+    },
+    {
+      "id": "system-en-a200nobelbook-regular",
+      "name": "A200NobelBook Regular",
+      "apiName": "A200NobelBook",
+      "category": "sans-serif",
+      "developer": "macOS Font Book",
+      "description": "A200NobelBook Regular is referenced from installed macOS fonts.",
+      "languages": [
+        "EN"
+      ],
+      "vibeTags": [
+        "System",
+        "FontBook"
+      ],
+      "source": "system",
+      "familyName": "A200NobelBook",
+      "fullName": "A200NobelBook Regular",
+      "postscriptName": "A200NobelBook-Regular",
+      "styleName": "Regular"
+    },
+    {
+      "id": "system-en-a300nobelr-regular",
+      "name": "A300NobelR Regular",
+      "apiName": "A300NobelR",
+      "category": "sans-serif",
+      "developer": "macOS Font Book",
+      "description": "A300NobelR Regular is referenced from installed macOS fonts.",
+      "languages": [
+        "EN"
+      ],
+      "vibeTags": [
+        "System",
+        "FontBook"
+      ],
+      "source": "system",
+      "familyName": "A300NobelR",
+      "fullName": "A300NobelR Regular",
+      "postscriptName": "A300NobelR-Regular",
+      "styleName": "Regular"
+    },
+    {
+      "id": "system-en-a400nobelb-bold",
+      "name": "A400NobelB Bold",
+      "apiName": "A400NobelB",
+      "category": "sans-serif",
+      "developer": "macOS Font Book",
+      "description": "A400NobelB Bold is referenced from installed macOS fonts.",
+      "languages": [
+        "EN"
+      ],
+      "vibeTags": [
+        "System",
+        "FontBook"
+      ],
+      "source": "system",
+      "familyName": "A400NobelB",
+      "fullName": "A400NobelB Bold",
+      "postscriptName": "A400NobelB-Bold",
+      "styleName": "Bold"
+    }
+  ]
+}

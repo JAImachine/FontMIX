@@ -30,6 +30,60 @@ const ensurePresetDir = async () => {
   await fs.mkdir(PRESET_DIR, { recursive: true });
 };
 
+const getPresetFilePath = async (rawName: string, rawDisplayName?: string) => {
+  await ensurePresetDir();
+  const requestedName = path.basename(rawName || "");
+  const requestedDisplayName = rawDisplayName || "";
+  const lookupNames = Array.from(new Set([
+    requestedName,
+    decodeURIComponent(requestedName),
+    sanitizePresetFileName(requestedName),
+    requestedDisplayName,
+    sanitizePresetFileName(requestedDisplayName),
+  ].filter(Boolean)));
+
+  const entries = await fs.readdir(PRESET_DIR, { withFileTypes: true });
+  const presetEntries = entries.filter((entry) => entry.isFile() && entry.name.endsWith(".fontmix.json"));
+  const exactMatch = presetEntries.find((entry) =>
+    entry.isFile() &&
+    lookupNames.includes(entry.name)
+  );
+
+  if (exactMatch) {
+    return {
+      fileName: exactMatch.name,
+      filePath: path.join(PRESET_DIR, exactMatch.name),
+    };
+  }
+
+  for (const entry of presetEntries) {
+    try {
+      const filePath = path.join(PRESET_DIR, entry.name);
+      const raw = await fs.readFile(filePath, "utf-8");
+      const parsed = JSON.parse(raw);
+      const jsonNames = [
+        parsed.name,
+        sanitizePresetFileName(parsed.name),
+      ].filter(Boolean);
+
+      if (jsonNames.some((name) => lookupNames.includes(name))) {
+        return {
+          fileName: entry.name,
+          filePath,
+        };
+      }
+    } catch {
+      // Ignore damaged preset files while resolving the target.
+    }
+  }
+
+  const fileName = sanitizePresetFileName(requestedName || requestedDisplayName);
+  return {
+    fileName,
+    filePath: path.join(PRESET_DIR, fileName),
+  };
+};
+
 // Project-local preset save/load routes
 app.get("/api/presets", async (_req, res) => {
   try {
@@ -72,13 +126,71 @@ app.get("/api/presets", async (_req, res) => {
 
 app.get("/api/presets/:fileName", async (req, res) => {
   try {
-    await ensurePresetDir();
-    const fileName = sanitizePresetFileName(req.params.fileName);
-    const filePath = path.join(PRESET_DIR, fileName);
+    const { filePath } = await getPresetFilePath(req.params.fileName);
     const raw = await fs.readFile(filePath, "utf-8");
     res.type("application/json").send(raw);
   } catch (error: any) {
     res.status(404).json({ error: "Preset not found", details: error.message });
+  }
+});
+
+app.delete("/api/presets/:fileName", async (req, res) => {
+  try {
+    const { fileName, filePath } = await getPresetFilePath(req.params.fileName);
+    await fs.unlink(filePath);
+    res.json({ ok: true, fileName });
+  } catch (error: any) {
+    res.status(404).json({ error: "Preset not found", details: error.message });
+  }
+});
+
+app.post("/api/presets/delete", async (req, res) => {
+  try {
+    const { fileName, filePath } = await getPresetFilePath(req.body?.fileName, req.body?.name);
+    await fs.unlink(filePath);
+    res.json({ ok: true, fileName });
+  } catch (error: any) {
+    res.status(404).json({ error: "Preset not found", details: error.message });
+  }
+});
+
+app.post("/api/presets/rename", async (req, res) => {
+  try {
+    const nextName = (req.body?.nextName || "").trim();
+    if (!nextName) {
+      return res.status(400).json({ error: "Preset name is required" });
+    }
+
+    const { fileName, filePath } = await getPresetFilePath(req.body?.fileName, req.body?.name);
+    const raw = await fs.readFile(filePath, "utf-8");
+    const parsed = JSON.parse(raw);
+    parsed.name = nextName;
+    parsed.savedAt = new Date().toISOString();
+
+    await fs.writeFile(filePath, `${JSON.stringify(parsed, null, 2)}\n`, "utf-8");
+    res.json({ ok: true, fileName, name: nextName });
+  } catch (error: any) {
+    res.status(500).json({ error: "Failed to rename preset", details: error.message });
+  }
+});
+
+app.post("/api/presets/:fileName/rename", async (req, res) => {
+  try {
+    const nextName = (req.body?.nextName || "").trim();
+    if (!nextName) {
+      return res.status(400).json({ error: "Preset name is required" });
+    }
+
+    const { fileName, filePath } = await getPresetFilePath(req.params.fileName, req.body?.name);
+    const raw = await fs.readFile(filePath, "utf-8");
+    const parsed = JSON.parse(raw);
+    parsed.name = nextName;
+    parsed.savedAt = new Date().toISOString();
+
+    await fs.writeFile(filePath, `${JSON.stringify(parsed, null, 2)}\n`, "utf-8");
+    res.json({ ok: true, fileName, name: nextName });
+  } catch (error: any) {
+    res.status(500).json({ error: "Failed to rename preset", details: error.message });
   }
 });
 

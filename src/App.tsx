@@ -1,16 +1,19 @@
 import React, { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import * as opentype from "opentype.js";
 import JSZip from "jszip";
-import { ENGLISH_FONTS, KOREAN_FONTS } from "./data";
 import { FontMetadata, StyleInstance, FontMixSaveFile } from "./types";
 import ScrubbableInput from "./components/ScrubbableInput";
 import { 
-  RefreshCw, 
   Download, 
   X, 
   Check, 
+  ChevronDown,
   FileCode,
+  Save,
+  MoreHorizontal,
   Sparkles,
+  Cloud,
   Upload,
   Plus,
   Trash2,
@@ -28,9 +31,322 @@ const LEGACY_SPECIMEN_TEXT = `다람쥐, ‘헌 쳇바퀴’ 타고파 2026 영�
 const PREVIOUS_SPECIMEN_TEXT = `다람쥐, ‘헌 쳇바퀴’ 타고파 2026 영문(English) Type: setting 15?! 조판 예문 “123Xx맘01”입니다.`;
 const SPECIMEN_TEXT_VERSION = "fontmix-copy-2026-v1";
 
+type LocalFontData = {
+  family?: string;
+  fullName?: string;
+  postscriptName?: string;
+  style?: string;
+  fontFormat?: "otf" | "ttf" | "unknown";
+  filePath?: string;
+  source?: "browser" | "desktop-scan";
+  blob?: () => Promise<Blob>;
+};
+
+type FontMixDesktopBridge = {
+  platform?: string;
+  listFonts?: () => Promise<{ fonts?: LocalFontData[] }>;
+};
+
+declare global {
+  interface Window {
+    fontmixDesktop?: FontMixDesktopBridge;
+  }
+}
+
+const normalizeFontLookupName = (value?: string) =>
+  (value || "")
+    .replace(/^Local\s+/i, "")
+    .replace(/^\[Installed\]\s*/i, "")
+    .replace(/[._-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+
+const stripLocalPrefix = (name?: string) =>
+  (name || "").replace(/^Local\s+/i, "").replace(/^\[Installed\]\s*/i, "").trim();
+
+const getFontCssFamilyName = (font: Partial<FontMetadata>) =>
+  stripLocalPrefix(font.familyName || font.apiName || font.fullName || font.name || "sans-serif");
+
+const isWebFont = (font: Partial<FontMetadata>) => font.source === "builtin";
+
+const getCloudStylesheetId = (url: string) => `fontmix-cloud-${slugifyFontId(url)}`;
+
+const loadCloudFontStylesheet = (url?: string) => {
+  const cleanUrl = (url || "").trim();
+  if (!cleanUrl || typeof document === "undefined") return;
+
+  const id = getCloudStylesheetId(cleanUrl);
+  if (document.getElementById(id)) return;
+
+  const link = document.createElement("link");
+  link.id = id;
+  link.rel = "stylesheet";
+  link.href = cleanUrl;
+  document.head.appendChild(link);
+};
+
+const createCloudFontMetadata = (
+  familyName: string,
+  cssUrl: string,
+  provider: string,
+  language: "KO" | "EN"
+): FontMetadata => {
+  const cleanFamilyName = stripLocalPrefix(familyName);
+  const cleanProvider = provider.trim() || "Cloud font";
+
+  return {
+    id: `cloud-${language.toLowerCase()}-${slugifyFontId(`${cleanProvider}-${cleanFamilyName}-${cssUrl}`)}`,
+    name: cleanFamilyName,
+    apiName: cleanFamilyName,
+    category: "sans-serif",
+    developer: cleanProvider,
+    description: `${cleanFamilyName} is loaded from ${cleanProvider}.`,
+    languages: [language],
+    vibeTags: ["Cloud", cleanProvider],
+    source: "cloud",
+    familyName: cleanFamilyName,
+    fullName: cleanFamilyName,
+    cloudCssUrl: cssUrl.trim(),
+    cloudProvider: cleanProvider,
+  };
+};
+
+const detectFontBlobFormat = async (fontData: LocalFontData): Promise<"otf" | "ttf" | "unknown"> => {
+  if (!fontData.blob) return fontData.fontFormat || "unknown";
+
+  try {
+    const blob = await fontData.blob();
+    const signature = new Uint8Array(await blob.slice(0, 4).arrayBuffer());
+    const ascii = String.fromCharCode(...signature);
+
+    if (ascii === "OTTO") return "otf";
+    if (ascii === "true" || ascii === "typ1") return "ttf";
+    if (signature[0] === 0x00 && signature[1] === 0x01 && signature[2] === 0x00 && signature[3] === 0x00) return "ttf";
+    return "unknown";
+  } catch {
+    return fontData.fontFormat || "unknown";
+  }
+};
+
+const getFontFormatBadge = (font: Partial<FontMetadata>) => {
+  if (font.fontFormat === "otf") return "O";
+  if (font.fontFormat === "ttf") return "T";
+  return "";
+};
+
+const copyLocalFontData = (
+  fontData: LocalFontData,
+  fontFormat: "otf" | "ttf" | "unknown" = fontData.fontFormat || "unknown"
+): LocalFontData => ({
+  family: fontData.family,
+  fullName: fontData.fullName,
+  postscriptName: fontData.postscriptName,
+  style: fontData.style,
+  blob: fontData.blob,
+  fontFormat,
+  filePath: fontData.filePath,
+  source: fontData.source,
+});
+
+const getLocalFontKey = (font: LocalFontData) =>
+  normalizeFontLookupName(font.postscriptName || font.fullName || font.family || font.filePath);
+
+const mergeLocalFontData = (groups: LocalFontData[][]) => {
+  const seen = new Set<string>();
+  const merged: LocalFontData[] = [];
+
+  groups.flat().forEach((font) => {
+    const key = getLocalFontKey(font);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    merged.push(font);
+  });
+
+  return merged;
+};
+
+const readBrowserLocalFonts = async (): Promise<LocalFontData[]> => {
+  if (!("queryLocalFonts" in window)) return [];
+
+  try {
+    const rawFontsList = await (window as any).queryLocalFonts() as LocalFontData[];
+    return rawFontsList.map((font) => ({
+      ...copyLocalFontData(font),
+      source: "browser" as const,
+    }));
+  } catch {
+    return [];
+  }
+};
+
+const readDesktopScannedFonts = async (): Promise<LocalFontData[]> => {
+  try {
+    const result = await window.fontmixDesktop?.listFonts?.();
+    return (result?.fonts || []).map((font) => copyLocalFontData(font));
+  } catch {
+    return [];
+  }
+};
+
+const readAvailableLocalFonts = async () =>
+  mergeLocalFontData([
+    await readBrowserLocalFonts(),
+    await readDesktopScannedFonts(),
+  ]);
+
+
+const getFontSortBucket = (name: string) => {
+  const firstChar = stripLocalPrefix(name).trim().charAt(0);
+  if (/^[0-9]/.test(firstChar)) return 0;
+  if (/^[가-힣ㄱ-ㅎㅏ-ㅣ]/.test(firstChar)) return 1;
+  if (/^[a-z]/i.test(firstChar)) return 2;
+  return 3;
+};
+
+const compareFontNames = (a: string, b: string) => {
+  const cleanA = stripLocalPrefix(a);
+  const cleanB = stripLocalPrefix(b);
+  const bucketDiff = getFontSortBucket(cleanA) - getFontSortBucket(cleanB);
+  if (bucketDiff !== 0) return bucketDiff;
+  return cleanA.localeCompare(cleanB, ["ko", "en"], {
+    numeric: true,
+    sensitivity: "base",
+  });
+};
+
+const compareFontMetadata = (a: FontMetadata, b: FontMetadata) =>
+  compareFontNames(a.name, b.name);
+
+const getFontSearchFields = (font: Partial<FontMetadata>) => [
+  font.name,
+  font.fullName,
+  font.familyName,
+  font.postscriptName,
+  font.styleName,
+].filter(Boolean) as string[];
+
+const getFontSearchScore = (font: Partial<FontMetadata>, query: string) => {
+  const normalizedQuery = normalizeFontLookupName(query);
+  if (!normalizedQuery) return 0;
+
+  const fields = getFontSearchFields(font).map(normalizeFontLookupName).filter(Boolean);
+  const primaryFields = [
+    font.name,
+    font.fullName,
+    font.familyName,
+  ].map(normalizeFontLookupName).filter(Boolean);
+
+  let bestScore = Number.POSITIVE_INFINITY;
+
+  fields.forEach((field) => {
+    const index = field.indexOf(normalizedQuery);
+    if (index === -1) return;
+
+    const isPrimary = primaryFields.includes(field);
+    const previousChar = index > 0 ? field[index - 1] : "";
+    const isWordStart = index === 0 || /\s/.test(previousChar);
+    const contiguousPenalty = index;
+
+    let score = isPrimary ? 0 : 40;
+
+    if (field === normalizedQuery) {
+      score += 0;
+    } else if (field.startsWith(normalizedQuery)) {
+      score += 2;
+    } else if (isWordStart) {
+      score += 8;
+    } else {
+      score += 18;
+    }
+
+    score += Math.min(contiguousPenalty, 20) / 100;
+    bestScore = Math.min(bestScore, score);
+  });
+
+  const compactQuery = normalizedQuery.replace(/\s+/g, "");
+  if (compactQuery !== normalizedQuery) {
+    return bestScore;
+  }
+
+  fields.forEach((field) => {
+    const compactField = field.replace(/\s+/g, "");
+    const index = compactField.indexOf(compactQuery);
+    if (index === -1) return;
+    bestScore = Math.min(bestScore, 28 + Math.min(index, 20) / 100);
+  });
+
+  return bestScore;
+};
+
+const compareFontSearchResults = (query: string) => (a: FontMetadata, b: FontMetadata) => {
+  const scoreDiff = getFontSearchScore(a, query) - getFontSearchScore(b, query);
+  if (scoreDiff !== 0) return scoreDiff;
+  return compareFontMetadata(a, b);
+};
+
+const slugifyFontId = (value?: string) =>
+  normalizeFontLookupName(value)
+    .replace(/[^a-z0-9가-힣]+/gi, "-")
+    .replace(/^-+|-+$/g, "") || "font";
+
+const createSystemFontMetadata = (
+  fontData: LocalFontData | string,
+  language: "KO" | "EN"
+): FontMetadata => {
+  const familyName = typeof fontData === "string" ? fontData : fontData.family || fontData.fullName || "System Font";
+  const fullName = typeof fontData === "string" ? fontData : fontData.fullName || fontData.family || "System Font";
+  const postscriptName = typeof fontData === "string" ? undefined : fontData.postscriptName;
+  const styleName = typeof fontData === "string" ? undefined : fontData.style;
+  const fontFormat = typeof fontData === "string" ? undefined : fontData.fontFormat;
+  const stableKey = postscriptName || fullName || familyName;
+
+  return {
+    id: `system-${language.toLowerCase()}-${slugifyFontId(stableKey)}`,
+    name: fullName,
+    apiName: familyName,
+    category: "sans-serif",
+    developer: "macOS Font Book",
+    description: `${fullName} is referenced from installed macOS fonts.`,
+    languages: [language],
+    vibeTags: ["System", "FontBook"],
+    source: "system",
+    familyName,
+    fullName,
+    postscriptName,
+    styleName,
+    fontFormat,
+  };
+};
+
+const createMissingFontMetadata = (
+  sourceFont: Partial<FontMetadata>,
+  language: "KO" | "EN"
+): FontMetadata => {
+  const name = stripLocalPrefix(sourceFont.fullName || sourceFont.name || sourceFont.familyName || "Missing Font");
+
+  return {
+    id: `missing-${language.toLowerCase()}-${slugifyFontId(sourceFont.postscriptName || name)}`,
+    name: `${name} (missing)`,
+    apiName: sourceFont.familyName || name,
+    category: "sans-serif",
+    developer: "Missing macOS font",
+    description: `${name} is not installed on this Mac.`,
+    languages: [language],
+    vibeTags: ["Missing", "System"],
+    source: "missing",
+    familyName: sourceFont.familyName,
+    fullName: sourceFont.fullName || sourceFont.name,
+    postscriptName: sourceFont.postscriptName,
+    styleName: sourceFont.styleName,
+    fontFormat: sourceFont.fontFormat || "unknown",
+    missing: true,
+  };
+};
+
 const createDefaultStyleInstances = (): StyleInstance[] => {
-  const koreanFont = KOREAN_FONTS.find(f => f.id === "ibm-plex-sans-kr") || KOREAN_FONTS[0];
-  const englishFont = ENGLISH_FONTS.find(f => f.id === "inter") || ENGLISH_FONTS[0];
+  const koreanFont = createSystemFontMetadata("Apple SD Gothic Neo", "KO");
+  const englishFont = createSystemFontMetadata("Helvetica Neue", "EN");
   const baseStyle = {
     koreanFont,
     englishFont,
@@ -55,13 +371,224 @@ const createDefaultStyleInstances = (): StyleInstance[] => {
   ];
 };
 
+type FontSearchDropdownProps = {
+  value: FontMetadata;
+  fonts: FontMetadata[];
+  previewText: string;
+  onChange: (font: FontMetadata) => void;
+};
+
+function FontSearchDropdown({
+  value,
+  fonts,
+  previewText,
+  onChange,
+}: FontSearchDropdownProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+  const [query, setQuery] = useState("");
+  const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
+  const rootRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const displayName = stripLocalPrefix(value.name);
+  const normalizedQuery = normalizeFontLookupName(query);
+  const filteredFonts = normalizedQuery
+    ? fonts.filter((font) =>
+        [
+          font.name,
+          font.fullName,
+          font.familyName,
+          font.postscriptName,
+          font.styleName,
+        ].some((item) => normalizeFontLookupName(item).includes(normalizedQuery))
+      )
+    : fonts;
+  const sortedFonts = [...filteredFonts].sort(
+    normalizedQuery ? compareFontSearchResults(query) : compareFontMetadata
+  );
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (
+        rootRef.current &&
+        !rootRef.current.contains(target) &&
+        panelRef.current &&
+        !panelRef.current.contains(target)
+      ) {
+        setIsOpen(false);
+        setIsSearching(false);
+        setQuery("");
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const updateDropdownPosition = () => {
+    const rect = rootRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const width = Math.min(760, window.innerWidth - 32);
+    const maxRight = Math.max(16, window.innerWidth - width - 16);
+    const right = Math.max(16, Math.min(window.innerWidth - rect.right, maxRight));
+    const top = rect.bottom + 4;
+
+    setDropdownStyle({
+      position: "fixed",
+      top,
+      right,
+      width,
+      maxHeight: Math.max(280, window.innerHeight - top - 12),
+    });
+  };
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    updateDropdownPosition();
+    window.addEventListener("resize", updateDropdownPosition);
+    window.addEventListener("scroll", updateDropdownPosition, true);
+
+    return () => {
+      window.removeEventListener("resize", updateDropdownPosition);
+      window.removeEventListener("scroll", updateDropdownPosition, true);
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (isSearching) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  }, [isSearching]);
+
+  const startSearch = () => {
+    updateDropdownPosition();
+    setIsOpen(true);
+    setIsSearching(true);
+    setQuery("");
+  };
+
+  const closeDropdown = () => {
+    setIsOpen(false);
+    setIsSearching(false);
+    setQuery("");
+  };
+
+  return (
+    <div ref={rootRef} className="relative flex-1 min-w-0 font-sans">
+      <div
+        className={`w-full bg-white text-[#1a1a1a] border rounded px-2.5 py-1.5 text-xs font-medium shadow-3xs flex items-center gap-2 transition-all ${
+          isOpen ? "border-[#3D67E6]" : "border-[#1a1a1a]/15 hover:border-[#1a1a1a]/30"
+        }`}
+      >
+        {isSearching ? (
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                closeDropdown();
+              }
+              if (event.key === "Enter" && sortedFonts[0]) {
+                onChange(sortedFonts[0]);
+                closeDropdown();
+              }
+            }}
+            placeholder="Search font"
+            className="min-w-0 flex-1 bg-transparent outline-none text-xs font-medium"
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => {
+              updateDropdownPosition();
+              setIsOpen((current) => !current);
+            }}
+            onDoubleClick={startSearch}
+            className="min-w-0 flex-1 text-left truncate cursor-pointer"
+            title="Click to open, double-click to search"
+          >
+            {displayName}
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => {
+            updateDropdownPosition();
+            setIsOpen((current) => !current);
+          }}
+          className="shrink-0 text-[#1A1A1A]/35 hover:text-[#3D67E6] cursor-pointer"
+          title="Open font list"
+        >
+          <ChevronDown className={`h-3.5 w-3.5 transition-transform ${isOpen ? "rotate-180" : ""}`} />
+        </button>
+      </div>
+
+      {isOpen && createPortal(
+        <div
+          ref={panelRef}
+          className="z-[9999] bg-white border border-[#1A1A1A]/12 rounded shadow-[0_12px_32px_rgba(0,0,0,0.08),0_2px_4px_rgba(0,0,0,0.04)] overflow-hidden"
+          style={dropdownStyle}
+        >
+          <div
+            className="overflow-y-auto custom-sidebar-scrollbar py-2"
+            style={{ maxHeight: dropdownStyle.maxHeight }}
+          >
+            {sortedFonts.length > 0 ? (
+              sortedFonts.map((font) => {
+                const isSelected = font.id === value.id;
+                return (
+                  <button
+                    key={font.id}
+                    type="button"
+                    onClick={() => {
+                      onChange(font);
+                      closeDropdown();
+                    }}
+                    className={`w-full px-3.5 py-3 text-left text-xs flex flex-col gap-0.5 cursor-pointer transition-colors ${
+                      isSelected ? "bg-[#3D67E6]/7 text-[#3D67E6]" : "text-[#1A1A1A] hover:bg-[#F5F5F5]"
+                    }`}
+                  >
+                    <span className="grid grid-cols-[minmax(180px,0.9fr)_28px_minmax(260px,1.25fr)] items-center gap-4 min-w-0">
+                      <span className="truncate text-[13px] font-semibold text-[#1A1A1A]">{stripLocalPrefix(font.name)}</span>
+                      <span className="text-[11px] font-black text-[#1A1A1A] text-center">
+                        {getFontFormatBadge(font)}
+                      </span>
+                      <span
+                        className="truncate text-[13px] text-[#1A1A1A]"
+                        style={{ fontFamily: `'${getFontCssFamilyName(font)}', sans-serif` }}
+                      >
+                        {previewText}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })
+            ) : (
+              <div className="px-2.5 py-3 text-[11px] text-[#1A1A1A]/40">
+                No matching fonts
+              </div>
+            )}
+          </div>
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
+
 export default function App() {
   // Fonts Lists (Dynamic with uploaded custom fonts)
   const [customKoreanFonts, setCustomKoreanFonts] = useState<FontMetadata[]>([]);
   const [customEnglishFonts, setCustomEnglishFonts] = useState<FontMetadata[]>([]);
 
-  const allKoreanFonts = [...customKoreanFonts, ...KOREAN_FONTS];
-  const allEnglishFonts = [...customEnglishFonts, ...ENGLISH_FONTS];
+  const allKoreanFonts = customKoreanFonts;
+  const allEnglishFonts = customEnglishFonts;
 
   // Workdesk States (List of coordinated Style weights supporting Variable layout pairing)
   const [styleInstances, setStyleInstances] = useState<StyleInstance[]>(() => {
@@ -119,34 +646,8 @@ export default function App() {
     updateStyleInstance(activeStyleId, updatedFields);
   };
 
-  const handleApplyActiveStyleToAllWeights = () => {
-    const {
-      enScale,
-      fontSizeKo,
-      letterSpacingKo,
-      letterSpacingEn,
-      baselineShiftEn,
-      numScale,
-      letterSpacingNum,
-      baselineShiftNum,
-      lineHeight,
-    } = activeStyle;
-
-    setStyleInstances(prev => prev.map(s => ({
-      ...s,
-      enScale,
-      fontSizeKo,
-      letterSpacingKo,
-      letterSpacingEn,
-      baselineShiftEn,
-      numScale,
-      letterSpacingNum,
-      baselineShiftNum,
-      lineHeight,
-    })));
-
-    setShowSyncSuccess(true);
-    setTimeout(() => setShowSyncSuccess(false), 2000);
+  const updateSettingValues = (updatedFields: Partial<StyleInstance>) => {
+    setStyleInstances(prev => prev.map(s => ({ ...s, ...updatedFields })));
   };
 
   const handleAddNewStyleInstance = () => {
@@ -211,11 +712,19 @@ export default function App() {
     return (stored === "all_en" || stored === "all_ko" || stored === "individual") ? stored : "individual";
   });
   
-  // 개별 문장부호 그룹의 한글 서체 사용 여부 (ko = 한글 서체 사용, en = 영문 서체 사용)
-  const [puncSettings, setPuncSettings] = useState<{ [key: string]: "ko" | "en" }>(() => {
+  type PunctuationFontMode = "ko" | "en" | "auto";
+
+  // 개별 문장부호 그룹의 서체 사용 설정 (auto = 문맥 기반 자동 선택)
+  const [puncSettings, setPuncSettings] = useState<{ [key: string]: PunctuationFontMode }>(() => {
     try {
       const stored = localStorage.getItem("font_harmony_workbench_punc_settings");
-      if (stored) return JSON.parse(stored);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        return {
+          ...parsed,
+          colon_semicolon: parsed.colon_semicolon || "auto",
+        };
+      }
     } catch (e) {
       console.error(e);
     }
@@ -226,7 +735,7 @@ export default function App() {
       quotes: "en",            // 따옴표류: 영문 서체 사용
       brackets: "en",          // 괄호류: 영문 서체 사용
       math_dash: "en",         // 수식 및 대시/물결표: 영문 서체 사용
-      colon_semicolon: "en",   // 콜론/세미콜론: 영문 서체 사용 (기본)
+      colon_semicolon: "auto", // 콜론/세미콜론: 앞뒤 한/영 문맥으로 자동 선택
       etc: "en",               // 기타 기호: 영문 서체 사용
       number: "en",            // 숫자: 영문 서체 사용 (기본)
     };
@@ -258,9 +767,6 @@ export default function App() {
 
   // 현재 클릭된 문장부호 항목의 Y 좌표 좌표 (플로팅 팝업 조절용)
   const [puncPopupY, setPuncPopupY] = useState<number>(200);
-
-  // 밸런스 일괄 동기화 성공 피드백 상태
-  const [showSyncSuccess, setShowSyncSuccess] = useState<boolean>(false);
 
   // 더블클릭 수정 모드 상태 - 활성화된 가중치 스타일 ID
   const [editingStyleId, setEditingStyleId] = useState<string | null>(null);
@@ -395,6 +901,36 @@ export default function App() {
     return null;
   };
 
+  const isHangulChar = (char: string) => /[가-힣ㄱ-ㅎㅏ-ㅣ]/.test(char);
+  const isLatinOrNumberChar = (char: string) => /[A-Za-z0-9０-９]/.test(char);
+
+  const getNearestMeaningfulChar = (text: string, startIndex: number, direction: -1 | 1) => {
+    for (let index = startIndex; index >= 0 && index < text.length; index += direction) {
+      const char = text[index];
+      if (!char || /\s/.test(char)) continue;
+      if (getPunctuationGroup(char)) continue;
+      return char;
+    }
+    return "";
+  };
+
+  const shouldUseLatinForAutoPunctuation = (text: string, index: number) => {
+    const before = getNearestMeaningfulChar(text, index - 1, -1);
+    const after = getNearestMeaningfulChar(text, index + 1, 1);
+
+    if (before) {
+      if (isHangulChar(before)) return false;
+      if (isLatinOrNumberChar(before)) return true;
+    }
+
+    if (after) {
+      if (isHangulChar(after)) return false;
+      if (isLatinOrNumberChar(after)) return true;
+    }
+
+    return true;
+  };
+
   const isCharLatin = (char: string): boolean => {
     const code = char.charCodeAt(0);
 
@@ -411,6 +947,25 @@ export default function App() {
     if (code > 255) return false;
     if (code === 32) return true; // Spacing always flows with Latin metrics
     return true;
+  };
+
+  const isCharLatinAt = (text: string, index: number): boolean => {
+    const char = text[index];
+    const group = getPunctuationGroup(char);
+
+    if (group) {
+      if (punctuationRule === "all_ko") return false;
+      if (punctuationRule === "all_en") return true;
+      if (punctuationRule === "individual") {
+        const mode = puncSettings[group] || "en";
+        if (mode === "auto" && group === "colon_semicolon") {
+          return shouldUseLatinForAutoPunctuation(text, index);
+        }
+        return mode === "en";
+      }
+    }
+
+    return isCharLatin(char);
   };
 
   const [cursorIndex, setCursorIndex] = useState<number>(0);
@@ -448,7 +1003,7 @@ export default function App() {
   // Local System Font Integration States
   const [uploadModalTab, setUploadModalTab] = useState<"file" | "device">("file");
   const [manualFontName, setManualFontName] = useState<string>("");
-  const [scannedFonts, setScannedFonts] = useState<any[]>([]); 
+  const [scannedFonts, setScannedFonts] = useState<LocalFontData[]>([]); 
   const [scannedFamilies, setScannedFamilies] = useState<string[]>([]); 
   const [scannedSearch, setScannedSearch] = useState<string>("");
   const [isScanning, setIsScanning] = useState<boolean>(false);
@@ -459,6 +1014,12 @@ export default function App() {
   const [uploadTarget, setUploadTarget] = useState<"KO" | "EN">("KO");
   const [dragActive, setDragActive] = useState<boolean>(false);
   const [uploadMessage, setUploadMessage] = useState<{ type: "success" | "error" | "info"; text: string } | null>(null);
+  const [isCloudFontOpen, setIsCloudFontOpen] = useState<boolean>(false);
+  const [cloudTarget, setCloudTarget] = useState<"KO" | "EN">("EN");
+  const [cloudProvider, setCloudProvider] = useState<string>("Adobe Fonts");
+  const [cloudFamilyName, setCloudFamilyName] = useState<string>("");
+  const [cloudCssUrl, setCloudCssUrl] = useState<string>("");
+  const [cloudMessage, setCloudMessage] = useState<{ type: "success" | "error" | "info"; text: string } | null>(null);
 
   const [isExportOpen, setIsExportOpen] = useState<boolean>(false);
   const [exportFileName, setExportFileName] = useState<string>("");
@@ -472,27 +1033,110 @@ export default function App() {
 
   const fontBuffersRef = useRef<{ [fontId: string]: ArrayBuffer }>({});
   const specimenTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const presetDropdownRef = useRef<HTMLDivElement>(null);
   const [saveFileMessage, setSaveFileMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [presetFiles, setPresetFiles] = useState<Array<{ fileName: string; name: string; savedAt: string }>>([]);
   const [selectedPresetFileName, setSelectedPresetFileName] = useState<string>("");
   const [isPresetListLoading, setIsPresetListLoading] = useState<boolean>(false);
+  const [isPresetDropdownOpen, setIsPresetDropdownOpen] = useState<boolean>(false);
+  const [presetDeleteTarget, setPresetDeleteTarget] = useState<{ fileName: string; name: string } | null>(null);
+  const [isDeletingPreset, setIsDeletingPreset] = useState<boolean>(false);
+  const [editingPresetFileName, setEditingPresetFileName] = useState<string | null>(null);
+  const [editingPresetName, setEditingPresetName] = useState<string>("");
+  const [isRenamingPreset, setIsRenamingPreset] = useState<boolean>(false);
+  const isRenamingPresetRef = useRef<boolean>(false);
+  const [isAdvancedSettingOpen, setIsAdvancedSettingOpen] = useState<boolean>(false);
 
-  const createSystemFontMetadata = (familyName: string, language: "KO" | "EN"): FontMetadata => {
-    const safeFamilyId = familyName
-      .toLowerCase()
-      .replace(/[^a-z0-9가-힣]+/gi, "-")
-      .replace(/^-+|-+$/g, "");
+  const getFontLookupCandidates = (font?: Partial<FontMetadata>) => {
+    const rawNames = [
+      font?.postscriptName,
+      font?.fullName,
+      font?.familyName,
+      font?.name,
+      font?.apiName?.replace(/\+/g, " "),
+    ].filter(Boolean) as string[];
 
-    return {
-      id: `local-system-${language.toLowerCase()}-${safeFamilyId || Date.now()}`,
-      name: familyName,
-      apiName: familyName,
-      category: "sans-serif",
-      developer: "Installed system font",
-      description: `'${familyName}' is installed on this device.`,
-      languages: [language],
-      vibeTags: ["System", "Local"],
-    };
+    const expandedNames = rawNames.flatMap((name) => [
+      name,
+      name.replace(/^Local\s+/i, ""),
+      name.replace(/\bRegular\b/gi, "").trim(),
+      name.replace(/^Local\s+/i, "").replace(/\bRegular\b/gi, "").trim(),
+    ]);
+
+    const seen = new Set<string>();
+    return expandedNames
+      .map(normalizeFontLookupName)
+      .filter((name) => {
+        if (!name || seen.has(name)) return false;
+        seen.add(name);
+        return true;
+      });
+  };
+
+  const findInstalledFontMatch = (font: Partial<FontMetadata>, installedFonts: LocalFontData[]) => {
+    const candidates = getFontLookupCandidates(font);
+    if (candidates.length === 0) return null;
+
+    const normalizedPostscript = normalizeFontLookupName(font.postscriptName);
+    if (normalizedPostscript) {
+      const postscriptMatch = installedFonts.find((item) =>
+        normalizeFontLookupName(item.postscriptName) === normalizedPostscript
+      );
+      if (postscriptMatch) return postscriptMatch;
+    }
+
+    const exactFaceMatch = installedFonts.find((item) =>
+      [item.fullName, item.postscriptName].some((name) =>
+        candidates.includes(normalizeFontLookupName(name))
+      )
+    );
+    if (exactFaceMatch) return exactFaceMatch;
+
+    const exactFamilyMatch = installedFonts.find((item) =>
+      candidates.includes(normalizeFontLookupName(item.family))
+    );
+    return exactFamilyMatch || null;
+  };
+
+  const readInstalledFonts = async (showStatus: boolean = false): Promise<LocalFontData[]> => {
+    if (showStatus) {
+      setIsScanning(true);
+      setUploadMessage({ type: "info", text: "Loading installed fonts..." });
+    }
+
+    try {
+      const fontsList = await readAvailableLocalFonts();
+      const families = Array.from(new Set<string>(
+        fontsList
+          .map((font) => font.family)
+          .filter((family: string | undefined): family is string => Boolean(family) && !family.startsWith("."))
+      )).sort(compareFontNames);
+
+      setScannedFonts(fontsList);
+      setScannedFamilies(families);
+      setSystemFontsLoaded(families.length > 0);
+      return fontsList;
+    } finally {
+      if (showStatus) {
+        setIsScanning(false);
+      }
+    }
+  };
+
+  const restorePresetFont = async (
+    font: FontMetadata,
+    language: "KO" | "EN",
+    installedFonts: LocalFontData[]
+  ): Promise<FontMetadata> => {
+    if (font.source === "cloud" && font.cloudCssUrl) {
+      loadCloudFontStylesheet(font.cloudCssUrl);
+      return font;
+    }
+
+    const installedMatch = findInstalledFontMatch(font, installedFonts);
+    return installedMatch
+      ? createSystemFontMetadata(installedMatch, language)
+      : createMissingFontMetadata(font, language);
   };
 
   // Auto-resize the specimen textarea to fit its content precisely
@@ -516,10 +1160,10 @@ export default function App() {
     }
 
     const loaders: string[] = [];
-    if (englishFont && !englishFont.id.startsWith("local-")) {
+    if (englishFont && englishFont.source === "builtin" && !englishFont.id.startsWith("local-")) {
       loaders.push(`${englishFont.apiName}:wght@300;400;500;700;800`);
     }
-    if (koreanFont && !koreanFont.id.startsWith("local-")) {
+    if (koreanFont && koreanFont.source === "builtin" && !koreanFont.id.startsWith("local-")) {
       loaders.push(`${koreanFont.apiName}:wght@300;400;500;700;900`);
     }
 
@@ -531,6 +1175,12 @@ export default function App() {
       document.head.appendChild(link);
     }
   }, [englishFont, koreanFont]);
+
+  useEffect(() => {
+    [...customKoreanFonts, ...customEnglishFonts, ...styleInstances.flatMap((style) => [style.koreanFont, style.englishFont])]
+      .filter((font) => font.source === "cloud" && font.cloudCssUrl)
+      .forEach((font) => loadCloudFontStylesheet(font.cloudCssUrl));
+  }, [customKoreanFonts, customEnglishFonts, styleInstances]);
 
   // Set default export filename when fonts change
   useEffect(() => {
@@ -668,7 +1318,7 @@ export default function App() {
         .replace(/\s+/g, " ")
         .trim();
       
-      const finalFontName = `Local ${safeFontName}`;
+      const finalFontName = stripLocalPrefix(safeFontName);
       
       // 언어 자동 감지
       const nameLcase = file.name.toLowerCase();
@@ -764,12 +1414,12 @@ export default function App() {
         }
         
         if (targetStyleId === "new_weight") {
-          const nameGuess = fontName.replace("Local ", "");
+          const nameGuess = stripLocalPrefix(fontName);
           const newInstance: StyleInstance = {
             id: `style-custom-${Date.now()}-${i}`,
             name: nameGuess,
-            koreanFont: targetLang === "KO" ? newMetadata : (KOREAN_FONTS.find(f => f.id === "ibm-plex-sans-kr") || KOREAN_FONTS[0]),
-            englishFont: targetLang === "EN" ? newMetadata : (ENGLISH_FONTS.find(f => f.id === "inter") || ENGLISH_FONTS[0]),
+            koreanFont: targetLang === "KO" ? newMetadata : createSystemFontMetadata("Apple SD Gothic Neo", "KO"),
+            englishFont: targetLang === "EN" ? newMetadata : createSystemFontMetadata("Helvetica Neue", "EN"),
             fontSizeKo: 24,
             enScale: 1.08,
             letterSpacingKo: -0.045,
@@ -882,7 +1532,7 @@ export default function App() {
 
         const rawFontName = file.name.replace(/\.[^/.]+$/, "");
         const safeFontName = rawFontName.replace(/[^a-zA-Z0-9_-]/g, " ").trim();
-        const finalFontName = `Local ${safeFontName}`;
+        const finalFontName = stripLocalPrefix(safeFontName);
 
         try {
           const fontFace = new FontFace(finalFontName, arrayBuffer);
@@ -981,51 +1631,61 @@ export default function App() {
   };
 
   const loadSystemFontsIntoSelectors = async () => {
-    if (!("queryLocalFonts" in window)) {
-      setUploadMessage({
-        type: "error",
-        text: "Installed font list is unavailable here. Use Chrome/Edge or Electron."
-      });
-      setIsUploadOpen(true);
-      setUploadModalTab("device");
-      return;
-    }
-
     setIsScanning(true);
     setUploadMessage({ type: "info", text: "Loading installed fonts..." });
 
     try {
-      const fontsList = await (window as any).queryLocalFonts();
+      const availableFonts = await readAvailableLocalFonts();
+      const selectableFontsRaw = availableFonts
+        .filter((font) => Boolean(font.family) && !font.family!.startsWith("."))
+        .sort((a, b) => compareFontNames(a.fullName || a.family || "", b.fullName || b.family || ""));
+      const selectableFonts = await Promise.all(
+        selectableFontsRaw.map(async (font) => copyLocalFontData(font, await detectFontBlobFormat(font)))
+      );
       const families = Array.from(new Set<string>(
-        fontsList
-          .map((font: any) => font.family)
-          .filter((family: string | undefined): family is string => Boolean(family) && !family.startsWith("."))
-      )).sort((a, b) => a.localeCompare(b));
+        selectableFonts
+          .map((font) => font.family)
+          .filter((family: string | undefined): family is string => Boolean(family))
+      )).sort(compareFontNames);
 
-      if (families.length === 0) {
+      if (selectableFonts.length === 0) {
         throw new Error("No selectable installed fonts found.");
       }
 
-      setScannedFonts(fontsList);
+      setScannedFonts(selectableFonts);
       setScannedFamilies(families);
       setCustomKoreanFonts(prev => {
         const existingIds = new Set(prev.map(font => font.id));
-        const newFonts = families
-          .map(family => createSystemFontMetadata(family, "KO"))
+        const newFonts = selectableFonts
+          .map(font => createSystemFontMetadata(font, "KO"))
           .filter(font => !existingIds.has(font.id));
-        return [...newFonts, ...prev];
+        return [...newFonts, ...prev].sort(compareFontMetadata);
       });
       setCustomEnglishFonts(prev => {
         const existingIds = new Set(prev.map(font => font.id));
-        const newFonts = families
-          .map(family => createSystemFontMetadata(family, "EN"))
+        const newFonts = selectableFonts
+          .map(font => createSystemFontMetadata(font, "EN"))
           .filter(font => !existingIds.has(font.id));
-        return [...newFonts, ...prev];
+        return [...newFonts, ...prev].sort(compareFontMetadata);
       });
+      setStyleInstances(prev => prev.map((style) => {
+        const koreanMatch = findInstalledFontMatch(style.koreanFont, selectableFonts);
+        const englishMatch = findInstalledFontMatch(style.englishFont, selectableFonts);
+
+        return {
+          ...style,
+          koreanFont: koreanMatch
+            ? createSystemFontMetadata(koreanMatch, "KO")
+            : createMissingFontMetadata(style.koreanFont, "KO"),
+          englishFont: englishMatch
+            ? createSystemFontMetadata(englishMatch, "EN")
+            : createMissingFontMetadata(style.englishFont, "EN"),
+        };
+      }));
       setSystemFontsLoaded(true);
       setUploadMessage({
         type: "success",
-        text: `Added ${families.length} installed fonts to the selectors.`
+        text: `Added ${selectableFonts.length} installed font faces.`
       });
       window.setTimeout(() => setUploadMessage(null), 1800);
     } catch (err: any) {
@@ -1040,6 +1700,10 @@ export default function App() {
       setIsScanning(false);
     }
   };
+
+  useEffect(() => {
+    loadSystemFontsIntoSelectors();
+  }, []);
 
   const handleRegisterSystemFont = async (familyName: string, isFromScan: boolean = false) => {
     if (!familyName.trim()) return;
@@ -1145,6 +1809,47 @@ export default function App() {
     }
   };
 
+  const openCloudFontModal = (target: "KO" | "EN") => {
+    setCloudTarget(target);
+    setCloudMessage(null);
+    setIsCloudFontOpen(true);
+  };
+
+  const handleAddCloudFont = () => {
+    const familyName = cloudFamilyName.trim();
+    const cssUrl = cloudCssUrl.trim();
+    const provider = cloudProvider.trim() || "Cloud font";
+
+    if (!familyName || !cssUrl) {
+      setCloudMessage({ type: "error", text: "Font family and CSS URL are required." });
+      return;
+    }
+
+    if (!/^https?:\/\//i.test(cssUrl)) {
+      setCloudMessage({ type: "error", text: "CSS URL must start with http:// or https://." });
+      return;
+    }
+
+    const cloudFont = createCloudFontMetadata(familyName, cssUrl, provider, cloudTarget);
+    loadCloudFontStylesheet(cssUrl);
+
+    if (cloudTarget === "KO") {
+      setCustomKoreanFonts((prev) => [cloudFont, ...prev.filter((font) => font.id !== cloudFont.id)]);
+      updateActiveStyle({ koreanFont: cloudFont });
+    } else {
+      setCustomEnglishFonts((prev) => [cloudFont, ...prev.filter((font) => font.id !== cloudFont.id)]);
+      updateActiveStyle({ englishFont: cloudFont });
+    }
+
+    setCloudMessage({ type: "success", text: `Added cloud font: ${familyName}` });
+    window.setTimeout(() => {
+      setIsCloudFontOpen(false);
+      setCloudMessage(null);
+      setCloudFamilyName("");
+      setCloudCssUrl("");
+    }, 700);
+  };
+
   // Modern character-by-character editing sync engine with 100% cursor alignment
   const renderEditableChars = (style: StyleInstance, isCardFocused: boolean) => {
     if (!customText) {
@@ -1194,7 +1899,7 @@ export default function App() {
       }
 
       const char = customText[idx];
-      const isLatin = isCharLatin(char);
+      const isLatin = isCharLatinAt(customText, idx);
       const puncGroup = getPunctuationGroup(char);
       const offset = puncGroup ? puncOffsets[puncGroup] : null;
 
@@ -1205,7 +1910,7 @@ export default function App() {
       };
 
       if (puncGroup === "number") {
-        const numFontName = isLatin ? style.englishFont.name : style.koreanFont.name;
+        const numFontName = isLatin ? getFontCssFamilyName(style.englishFont) : getFontCssFamilyName(style.koreanFont);
         const totalShiftPercent = (style.baselineShiftNum ?? 0) + (offset ? offset.shift : 0);
         const numberStyle: React.CSSProperties = {
           fontFamily: `'${numFontName}', sans-serif`,
@@ -1229,7 +1934,7 @@ export default function App() {
       } else if (isLatin) {
         const totalShiftPercent = style.baselineShiftEn + (offset ? offset.shift : 0);
         const englishStyle: React.CSSProperties = {
-          fontFamily: `'${style.englishFont.name}', sans-serif`,
+          fontFamily: `'${getFontCssFamilyName(style.englishFont)}', sans-serif`,
           fontSize: `${Math.round(style.fontSizeKo * style.enScale)}px`,
           letterSpacing: `${style.letterSpacingEn}em`,
           position: "relative",
@@ -1249,7 +1954,7 @@ export default function App() {
         );
       } else {
         const koreanStyle: React.CSSProperties = {
-          fontFamily: `'${style.koreanFont.name}', sans-serif`,
+          fontFamily: `'${getFontCssFamilyName(style.koreanFont)}', sans-serif`,
           fontSize: `${style.fontSizeKo}px`,
           letterSpacing: `${style.letterSpacingKo}em`,
           position: offset && offset.shift !== 0 ? "relative" : undefined,
@@ -1306,13 +2011,17 @@ export default function App() {
   };
 
   const fetchFontBuffer = async (font: FontMetadata): Promise<ArrayBuffer> => {
-    if (font.id.startsWith("local-")) {
+    if (font.source === "cloud") {
+      throw new Error(`Cloud font '${font.name}' is available for preview and presets, but composite font export requires a local font file or installed macOS font.`);
+    }
+
+    if (font.source === "system" || font.id.startsWith("system-") || font.id.startsWith("local-")) {
       const buffer = fontBuffersRef.current[font.id];
       if (buffer) return buffer;
 
-      if (font.id.startsWith("local-system-") && scannedFonts.length > 0) {
-        const matchingFontData = scannedFonts.find(f => f.family === font.name);
-        if (matchingFontData) {
+      if ((font.source === "system" || font.id.startsWith("system-") || font.id.startsWith("local-system-")) && scannedFonts.length > 0) {
+        const matchingFontData = findInstalledFontMatch(font, scannedFonts);
+        if (matchingFontData?.blob) {
           const blob = await matchingFontData.blob();
           const systemBuffer = await blob.arrayBuffer();
           fontBuffersRef.current[font.id] = systemBuffer;
@@ -1358,17 +2067,35 @@ export default function App() {
     window.setTimeout(() => setSaveFileMessage(null), 2600);
   };
 
-  const createCurrentSaveFile = (): FontMixSaveFile => {
-    const safeName = (exportFileName || `${koreanFont.name}X${englishFont.name}`)
-      .trim()
-      .replace(/\s+/g, "_")
-      .replace(/[^\w가-힣.-]+/g, "_");
+  const createNextPresetName = () => {
+    const usedNames = new Set(presetFiles.map((preset) => preset.name));
+    let nextIndex = presetFiles.length + 1;
+    let nextName = `프리셋${String(nextIndex).padStart(2, "0")}`;
+
+    while (usedNames.has(nextName)) {
+      nextIndex += 1;
+      nextName = `프리셋${String(nextIndex).padStart(2, "0")}`;
+    }
+
+    return nextName;
+  };
+
+  const createCurrentSaveFile = (presetName: string): FontMixSaveFile => {
+    const uniqueFonts = (fonts: FontMetadata[]) => {
+      const seen = new Set<string>();
+      return fonts.filter((font) => {
+        const key = font.postscriptName || font.id || font.name;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    };
 
     return {
       app: "FontMix Studio",
       version: 1,
       savedAt: new Date().toISOString(),
-      name: safeName || "FontMix_Settings",
+      name: presetName,
       punctuationRule,
       puncSettings,
       puncOffsets,
@@ -1376,8 +2103,8 @@ export default function App() {
       activeStyleId,
       globalTextAlign,
       globalVerticalAlign,
-      customKoreanFonts,
-      customEnglishFonts,
+      customKoreanFonts: uniqueFonts(styleInstances.map((style) => style.koreanFont)),
+      customEnglishFonts: uniqueFonts(styleInstances.map((style) => style.englishFont)),
     };
   };
 
@@ -1405,13 +2132,28 @@ export default function App() {
     refreshPresetFiles();
   }, []);
 
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        presetDropdownRef.current &&
+        !presetDropdownRef.current.contains(event.target as Node)
+      ) {
+        setIsPresetDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
   const handleSaveSettingsToFile = async () => {
     try {
-      const saveFile = createCurrentSaveFile();
+      const presetName = createNextPresetName();
+      const saveFile = createCurrentSaveFile(presetName);
       const res = await fetch("/api/presets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fileName: saveFile.name, saveFile }),
+        body: JSON.stringify({ fileName: presetName, saveFile }),
       });
 
       if (!res.ok) {
@@ -1428,7 +2170,7 @@ export default function App() {
     }
   };
 
-  const applyLoadedSaveFile = (parsed: Partial<FontMixSaveFile>) => {
+  const applyLoadedSaveFile = async (parsed: Partial<FontMixSaveFile>) => {
     if (
       parsed.app !== "FontMix Studio" ||
       parsed.version !== 1 ||
@@ -1438,29 +2180,64 @@ export default function App() {
       throw new Error("Invalid FontMix settings file.");
     }
 
-    const savedKoreanFonts = parsed.customKoreanFonts || [];
-    const savedEnglishFonts = parsed.customEnglishFonts || [];
-    const koreanPool = [...savedKoreanFonts, ...customKoreanFonts, ...KOREAN_FONTS];
-    const englishPool = [...savedEnglishFonts, ...customEnglishFonts, ...ENGLISH_FONTS];
+    const installedFonts = await readInstalledFonts();
+    const savedKoreanFonts = await Promise.all(
+      (parsed.customKoreanFonts || []).map((font) => restorePresetFont(font, "KO", installedFonts))
+    );
+    const savedEnglishFonts = await Promise.all(
+      (parsed.customEnglishFonts || []).map((font) => restorePresetFont(font, "EN", installedFonts))
+    );
+    const koreanPool = [...savedKoreanFonts, ...customKoreanFonts];
+    const englishPool = [...savedEnglishFonts, ...customEnglishFonts];
 
-    const sanitizedStyles = parsed.styleInstances.map((style) => ({
-      ...style,
-      koreanFont: koreanPool.find((font) => font.id === style.koreanFont?.id) || style.koreanFont || koreanPool[0],
-      englishFont: englishPool.find((font) => font.id === style.englishFont?.id) || style.englishFont || englishPool[0],
-      numScale: style.numScale ?? 1.0,
-      letterSpacingNum: style.letterSpacingNum ?? 0,
-      baselineShiftNum: style.baselineShiftNum ?? 0,
-      textAlign: style.textAlign || parsed.globalTextAlign || "center",
-      verticalAlign: style.verticalAlign || parsed.globalVerticalAlign || "center",
+    const sanitizedStyles = await Promise.all(parsed.styleInstances.map(async (style) => {
+      const koreanSource =
+        koreanPool.find((font) => font.id === style.koreanFont?.id || font.name === style.koreanFont?.name) ||
+        style.koreanFont ||
+        style.koreanFont;
+      const englishSource =
+        englishPool.find((font) => font.id === style.englishFont?.id || font.name === style.englishFont?.name) ||
+        style.englishFont ||
+        style.englishFont;
+
+      const [koreanFontRestored, englishFontRestored] = await Promise.all([
+        restorePresetFont(koreanSource, "KO", installedFonts),
+        restorePresetFont(englishSource, "EN", installedFonts),
+      ]);
+
+      return {
+        ...style,
+        koreanFont: koreanFontRestored,
+        englishFont: englishFontRestored,
+        numScale: style.numScale ?? 1.0,
+        letterSpacingNum: style.letterSpacingNum ?? 0,
+        baselineShiftNum: style.baselineShiftNum ?? 0,
+        textAlign: style.textAlign || parsed.globalTextAlign || "center",
+        verticalAlign: style.verticalAlign || parsed.globalVerticalAlign || "center",
+      };
     }));
 
     const mergeFonts = (current: FontMetadata[], incoming: FontMetadata[]) => {
-      const currentIds = new Set(current.map((font) => font.id));
-      return [...incoming.filter((font) => !currentIds.has(font.id)), ...current];
+      const currentKeys = new Set(current.flatMap((font) => [font.id, font.name]));
+      return [
+        ...incoming.filter((font) => {
+          const isNew = !currentKeys.has(font.id) && !currentKeys.has(font.name);
+          currentKeys.add(font.id);
+          currentKeys.add(font.name);
+          return isNew;
+        }),
+        ...current,
+      ];
     };
 
-    setCustomKoreanFonts((prev) => mergeFonts(prev, savedKoreanFonts));
-    setCustomEnglishFonts((prev) => mergeFonts(prev, savedEnglishFonts));
+    setCustomKoreanFonts((prev) => mergeFonts(prev, [
+      ...savedKoreanFonts,
+      ...sanitizedStyles.map((style) => style.koreanFont),
+    ]));
+    setCustomEnglishFonts((prev) => mergeFonts(prev, [
+      ...savedEnglishFonts,
+      ...sanitizedStyles.map((style) => style.englishFont),
+    ]));
     setStyleInstances(sanitizedStyles);
 
     const restoredActiveId = sanitizedStyles.some((style) => style.id === parsed.activeStyleId)
@@ -1500,23 +2277,129 @@ export default function App() {
     });
   };
 
-  const handleLoadSelectedPreset = async () => {
-    if (!selectedPresetFileName) {
+  const handleLoadPresetFile = async (fileName: string, displayName?: string) => {
+    if (!fileName) {
       showSaveFileMessage({ type: "error", text: "Select a preset first." });
       return;
     }
 
     try {
-      const res = await fetch(`/api/presets/${encodeURIComponent(selectedPresetFileName)}`);
+      setSelectedPresetFileName(fileName);
+      setIsPresetDropdownOpen(false);
+      const res = await fetch(`/api/presets/${encodeURIComponent(fileName)}`);
       if (!res.ok) throw new Error(`Preset load failed: ${res.status}`);
       const parsed = await res.json() as Partial<FontMixSaveFile>;
-      applyLoadedSaveFile(parsed);
-      showSaveFileMessage({ type: "success", text: `Loaded preset: ${selectedPresetFileName}` });
+      await applyLoadedSaveFile(parsed);
+      showSaveFileMessage({ type: "success", text: `Loaded preset: ${displayName || fileName}` });
     } catch (err: any) {
       showSaveFileMessage({
         type: "error",
         text: err.message || "Could not load preset.",
       });
+    }
+  };
+
+  const startPresetRename = (preset: { fileName: string; name: string }) => {
+    setEditingPresetFileName(preset.fileName);
+    setEditingPresetName(preset.name);
+    setSelectedPresetFileName(preset.fileName);
+    setIsPresetDropdownOpen(true);
+  };
+
+  const cancelPresetRename = () => {
+    setEditingPresetFileName(null);
+    setEditingPresetName("");
+  };
+
+  const commitPresetRename = async () => {
+    if (!editingPresetFileName || isRenamingPresetRef.current) return;
+    const nextName = editingPresetName.trim();
+    const currentPreset = presetFiles.find((preset) => preset.fileName === editingPresetFileName);
+
+    if (!nextName || nextName === currentPreset?.name) {
+      cancelPresetRename();
+      return;
+    }
+
+    isRenamingPresetRef.current = true;
+    setIsRenamingPreset(true);
+    try {
+      const loadRes = await fetch(`/api/presets/${encodeURIComponent(editingPresetFileName)}`);
+      if (!loadRes.ok) {
+        throw new Error(`Preset load failed: ${loadRes.status}`);
+      }
+
+      const saveFile = await loadRes.json() as FontMixSaveFile;
+      const renamedSaveFile: FontMixSaveFile = {
+        ...saveFile,
+        name: nextName,
+        savedAt: new Date().toISOString(),
+      };
+
+      const saveRes = await fetch("/api/presets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fileName: editingPresetFileName,
+          saveFile: renamedSaveFile,
+        }),
+      });
+
+      if (!saveRes.ok) {
+        const errorData = await saveRes.json().catch(() => ({}));
+        throw new Error(errorData.details || errorData.error || `Preset rename failed: ${saveRes.status}`);
+      }
+
+      await refreshPresetFiles();
+      setSelectedPresetFileName(editingPresetFileName);
+      showSaveFileMessage({ type: "success", text: `Renamed preset: ${nextName}` });
+    } catch (err: any) {
+      showSaveFileMessage({ type: "error", text: err.message || "Could not rename preset." });
+    } finally {
+      isRenamingPresetRef.current = false;
+      setIsRenamingPreset(false);
+      cancelPresetRename();
+    }
+  };
+
+  const openPresetDeleteModal = (target?: { fileName: string; name: string }) => {
+    const targetFileName = target?.fileName || selectedPresetFileName;
+    if (!targetFileName) return;
+    const targetPreset = target || presetFiles.find((preset) => preset.fileName === targetFileName);
+    setPresetDeleteTarget({
+      fileName: targetFileName,
+      name: targetPreset?.name || targetFileName,
+    });
+    setIsPresetDropdownOpen(false);
+  };
+
+  const handleDeleteSelectedPreset = async () => {
+    if (!presetDeleteTarget) return;
+
+    const target = presetDeleteTarget;
+    setPresetDeleteTarget(null);
+    setIsDeletingPreset(true);
+    try {
+      const res = await fetch("/api/presets/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileName: target.fileName, name: target.name }),
+      });
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || `Preset delete failed: ${res.status}`);
+      }
+
+      const deletedName = target.name;
+      if (selectedPresetFileName === target.fileName) {
+        setSelectedPresetFileName("");
+      }
+      await refreshPresetFiles();
+      showSaveFileMessage({ type: "success", text: `Deleted preset: ${deletedName}` });
+    } catch (err: any) {
+      showSaveFileMessage({ type: "error", text: err.message || "Could not delete preset." });
+    } finally {
+      setIsDeletingPreset(false);
     }
   };
 
@@ -1817,7 +2700,7 @@ export default function App() {
 }
 
 .hybrid-text-engine .lat-glyph {
-  font-family: '${englishFont.name}', sans-serif;
+  font-family: '${getFontCssFamilyName(englishFont)}', sans-serif;
   font-size: ${fontSizeEn}px;
   letter-spacing: ${letterSpacingEn}em;
   position: relative;
@@ -1826,7 +2709,7 @@ export default function App() {
 }
 
 .hybrid-text-engine .num-glyph {
-  font-family: '${englishFont.id.startsWith("local-") || !isCharLatin("0") ? koreanFont.name : englishFont.name}', sans-serif;
+  font-family: '${!isCharLatin("0") ? getFontCssFamilyName(koreanFont) : getFontCssFamilyName(englishFont)}', sans-serif;
   font-size: ${Math.round(fontSizeKo * numScale)}px;
   letter-spacing: ${letterSpacingNum}em;
   position: relative;
@@ -1835,7 +2718,7 @@ export default function App() {
 }
 
 .hybrid-text-engine .kr-glyph {
-  font-family: '${koreanFont.name}', sans-serif;
+  font-family: '${getFontCssFamilyName(koreanFont)}', sans-serif;
   font-size: ${fontSizeKo}px;
   letter-spacing: ${letterSpacingKo}em;
   display: inline;
@@ -1911,19 +2794,29 @@ Thank you for designing with FontMix Studio!
   // Generate dynamic, bilingual self-contained spec sheet template string
   const generateSpecimenHtml = (): string => {
     const specName = exportFileName || `${koreanFont.name}X${englishFont.name}`;
-    const enGoogleUrl = englishFont.id.startsWith("local-") 
-      ? `/* Local font: ${englishFont.name} */`
-      : `https://fonts.googleapis.com/css2?family=${englishFont.apiName}:wght@400;700&display=swap`;
-    const krGoogleUrl = koreanFont.id.startsWith("local-")
-      ? `/* Local font: ${koreanFont.name} */`
-      : `https://fonts.googleapis.com/css2?family=${koreanFont.apiName}:wght@400;700&display=swap`;
+    const englishCssFamily = getFontCssFamilyName(englishFont);
+    const koreanCssFamily = getFontCssFamilyName(koreanFont);
+    const englishIsWebFont = isWebFont(englishFont);
+    const koreanIsWebFont = isWebFont(koreanFont);
+    const englishCssUrl = englishFont.source === "cloud"
+      ? englishFont.cloudCssUrl || ""
+      : englishIsWebFont
+      ? `https://fonts.googleapis.com/css2?family=${englishFont.apiName}:wght@400;700&display=swap`
+      : "";
+    const koreanCssUrl = koreanFont.source === "cloud"
+      ? koreanFont.cloudCssUrl || ""
+      : koreanIsWebFont
+      ? `https://fonts.googleapis.com/css2?family=${koreanFont.apiName}:wght@400;700&display=swap`
+      : "";
+    const englishUsesExternalCss = Boolean(englishCssUrl);
+    const koreanUsesExternalCss = Boolean(koreanCssUrl);
 
     // Generate characters with discrete punctuation styling for high-fidelity rendering
     let specimenBodyHtml = "";
     for (let i = 0; i < customText.length; i++) {
       const char = customText[i];
       const puncGroup = getPunctuationGroup(char);
-      const isLatin = isCharLatin(char);
+      const isLatin = isCharLatinAt(customText, i);
       const escaped = char.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
       
       const puncClass = puncGroup ? ` punc-${puncGroup}` : "";
@@ -1957,10 +2850,10 @@ Thank you for designing with FontMix Studio!
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${specName} - Hybrid Typography Specimen</title>
-  ${!englishFont.id.startsWith("local-") ? `<link rel="preconnect" href="https://fonts.googleapis.com">
+  ${englishUsesExternalCss ? `<link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="${enGoogleUrl}" rel="stylesheet">` : ""}
-  ${!koreanFont.id.startsWith("local-") ? `<link href="${krGoogleUrl}" rel="stylesheet">` : ""}
+  <link href="${englishCssUrl}" rel="stylesheet">` : ""}
+  ${koreanUsesExternalCss ? `<link href="${koreanCssUrl}" rel="stylesheet">` : ""}
 
   <style>
     :root {
@@ -2036,7 +2929,7 @@ Thank you for designing with FontMix Studio!
     }
 
     .lat-glyph {
-      font-family: '${englishFont.name}', sans-serif;
+      font-family: '${englishCssFamily}', sans-serif;
       font-size: var(--font-size-en);
       letter-spacing: var(--letter-spacing-en);
       position: relative;
@@ -2045,7 +2938,7 @@ Thank you for designing with FontMix Studio!
     }
 
     .num-glyph {
-      font-family: '${englishFont.id.startsWith("local-") || !isCharLatin("0") ? koreanFont.name : englishFont.name}', sans-serif;
+      font-family: '${!isCharLatin("0") ? koreanCssFamily : englishCssFamily}', sans-serif;
       font-size: var(--font-size-num);
       letter-spacing: var(--letter-spacing-num);
       position: relative;
@@ -2054,7 +2947,7 @@ Thank you for designing with FontMix Studio!
     }
 
     .kr-glyph {
-      font-family: '${koreanFont.name}', sans-serif;
+      font-family: '${koreanCssFamily}', sans-serif;
       font-size: var(--font-size-ko);
       letter-spacing: var(--letter-spacing-ko);
       display: inline;
@@ -2137,8 +3030,8 @@ Thank you for designing with FontMix Studio!
 
     <h3 style="margin-top: 40px; font-size: 14px; text-transform: uppercase; letter-spacing: 0.1em;">Production CSS Integration</h3>
     <textarea class="code-block" style="width: 100%; height: 260px; border: none; resize: none;" readonly>/* 1. Add web-fonts imports (if not local files) */
-${!englishFont.id.startsWith("local-") ? `@import url('${enGoogleUrl}');` : "/* Local english font used. Please embed files. */"}
-${!koreanFont.id.startsWith("local-") ? `@import url('${krGoogleUrl}');` : "/* Local korean font used. Please embed files. */"}
+${englishUsesExternalCss ? `@import url('${englishCssUrl}');` : "/* macOS installed English font reference. */"}
+${koreanUsesExternalCss ? `@import url('${koreanCssUrl}');` : "/* macOS installed Korean font reference. */"}
 
 /* 2. Custom Dual-Engine Typographer Code */
 .hybrid-text-engine {
@@ -2146,7 +3039,7 @@ ${!koreanFont.id.startsWith("local-") ? `@import url('${krGoogleUrl}');` : "/* L
 }
 
 .hybrid-text-engine .lat-glyph {
-  font-family: '${englishFont.name}', sans-serif;
+  font-family: '${englishCssFamily}', sans-serif;
   font-size: ${fontSizeEn}px;
   letter-spacing: ${letterSpacingEn}em;
   position: relative;
@@ -2155,7 +3048,7 @@ ${!koreanFont.id.startsWith("local-") ? `@import url('${krGoogleUrl}');` : "/* L
 }
 
 .hybrid-text-engine .num-glyph {
-  font-family: '${englishFont.id.startsWith("local-") || !isCharLatin("0") ? koreanFont.name : englishFont.name}', sans-serif;
+  font-family: '${!isCharLatin("0") ? koreanCssFamily : englishCssFamily}', sans-serif;
   font-size: ${Math.round(fontSizeKo * numScale)}px;
   letter-spacing: ${letterSpacingNum}em;
   position: relative;
@@ -2164,17 +3057,17 @@ ${!koreanFont.id.startsWith("local-") ? `@import url('${krGoogleUrl}');` : "/* L
 }
 
 .hybrid-text-engine .kr-glyph {
-  font-family: '${koreanFont.name}', sans-serif;
+  font-family: '${koreanCssFamily}', sans-serif;
   font-size: ${fontSizeKo}px;
   letter-spacing: ${letterSpacingKo}em;
   display: inline;
 }</textarea>
 
-    ${(!englishFont.id.startsWith("local-") || !koreanFont.id.startsWith("local-")) ? `
+    ${(englishIsWebFont || koreanIsWebFont) ? `
     <div style="margin-top: 25px; border-top: 1px solid rgba(26,26,26,0.1); padding-top: 20px;">
       <strong>Official source font downloads:</strong><br>
-      ${!englishFont.id.startsWith("local-") ? `<a href="https://fonts.google.com/specimen/${englishFont.apiName.replace("+", "_")}" target="_blank" class="btn-pack" style="margin-right: 10px;">Get ${englishFont.name}</a>` : ""}
-      ${!koreanFont.id.startsWith("local-") ? `<a href="https://fonts.google.com/specimen/${koreanFont.apiName.replace("+", "_")}" target="_blank" class="btn-pack">Get ${koreanFont.name}</a>` : ""}
+      ${englishIsWebFont ? `<a href="https://fonts.google.com/specimen/${englishFont.apiName.replace("+", "_")}" target="_blank" class="btn-pack" style="margin-right: 10px;">Get ${englishFont.name}</a>` : ""}
+      ${koreanIsWebFont ? `<a href="https://fonts.google.com/specimen/${koreanFont.apiName.replace("+", "_")}" target="_blank" class="btn-pack">Get ${koreanFont.name}</a>` : ""}
     </div>` : ""}
 
     <div class="footer">
@@ -2472,7 +3365,7 @@ ${!koreanFont.id.startsWith("local-") ? `@import url('${krGoogleUrl}');` : "/* L
                         textAlign: globalTextAlign,
                         fontSize: `${style.fontSizeKo}px`,
                         letterSpacing: `${style.letterSpacingKo}em`,
-                        fontFamily: `'${style.englishFont.name}', '${style.koreanFont.name}', sans-serif`,
+                        fontFamily: `'${getFontCssFamilyName(style.englishFont)}', '${getFontCssFamilyName(style.koreanFont)}', sans-serif`,
                       }}
                       className="relative w-full break-words whitespace-pre-wrap leading-inherit select-text"
                     >
@@ -2612,109 +3505,51 @@ ${!koreanFont.id.startsWith("local-") ? `@import url('${krGoogleUrl}');` : "/* L
 
               {/* Body Content */}
               <div className="p-4 space-y-4 bg-white border-b border-[#1A1A1A]/10">
-                <div className="text-[10px] font-bold text-[#888888] tracking-wider font-sans select-none">
-                  Setting - <span className="text-[#3D67E6]">{activeStyle.name}</span>
-                </div>
-
-                {/* Korean Font Selection (for currently active weight) */}
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center text-[10px] font-bold tracking-tight text-[#555555]">
-                    <span>KOREAN BASE FONT ({activeStyle.name})</span>
-                    <span className="text-[9px] text-[#3D67E6] font-extrabold font-mono">KO</span>
+	                {/* Korean Font Selection (for currently active weight) */}
+	                <div className="space-y-2">
+	                  <div className="flex justify-between items-center text-[10px] font-bold tracking-tight text-[#555555]">
+	                    <span>KR</span>
                   </div>
                   <div className="flex gap-1.5">
-                    <select
-                      value={koreanFont.id}
-                      onChange={(e) => {
-                        if (e.target.value === "__load_system_fonts__") {
-                          loadSystemFontsIntoSelectors();
-                          return;
-                        }
-                        const found = allKoreanFonts.find(f => f.id === e.target.value);
-                        if (found) {
-                          updateActiveStyle({ koreanFont: found });
-                        }
-                      }}
-                      className="flex-1 bg-white text-[#1a1a1a] border border-[#1a1a1a]/15 rounded px-2.5 py-1.5 text-xs focus:outline-none focus:border-[#3D67E6] font-medium font-sans cursor-pointer shadow-3xs"
-                    >
-                      {!allKoreanFonts.some(font => font.id === koreanFont.id) && (
-                        <option value={koreanFont.id}>
-                          {koreanFont.name}
-                        </option>
-                      )}
-                      <option value="__load_system_fonts__" disabled={isScanning}>
-                        {isScanning ? "Loading installed fonts..." : systemFontsLoaded ? "Refresh installed fonts" : "Load installed fonts"}
-                      </option>
-                      {allKoreanFonts.map(font => (
-                        <option key={font.id} value={font.id}>
-                          {font.id.startsWith("local-system-") ? `[Installed] ${font.name}` : font.id.startsWith("local-") ? `[Local] ${font.name}` : font.name}
-                        </option>
-                      ))}
-                    </select>
+                    <FontSearchDropdown
+                      value={koreanFont}
+                      fonts={allKoreanFonts}
+                      previewText={customText}
+                      onChange={(font) => updateActiveStyle({ koreanFont: font })}
+                    />
                     <button
-                      onClick={() => openUploadModal("KO")}
-                      title="Upload local Hangul font (.ttf, .otf)"
+                      type="button"
+                      onClick={() => openCloudFontModal("KO")}
+                      title="Add cloud Korean font"
                       className="bg-white hover:bg-[#F3F3F0] border border-[#1a1a1a]/15 px-2.5 rounded transition-all cursor-pointer text-[#3D67E6] flex items-center justify-center shadow-3xs"
                     >
-                      <Plus className="h-4 w-4" />
+                      <Cloud className="h-4 w-4" />
                     </button>
                   </div>
-                  {koreanFont.id.startsWith("local-") && (
-                    <div className="text-[9px] text-[#3D67E6] font-semibold italic pl-1">
-                      *{koreanFont.developer} Active
-                    </div>
-                  )}
-                </div>
+	                </div>
 
-                {/* English Font Selection (for currently active weight) */}
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center text-[10px] font-bold tracking-tight text-[#555555]">
-                    <span>LATIN & NUMBERS FONT ({activeStyle.name})</span>
-                    <span className="text-[9px] text-[#3D67E6] font-extrabold font-mono font-sans">EN / NUM</span>
+	                {/* English Font Selection (for currently active weight) */}
+	                <div className="space-y-2">
+	                  <div className="flex justify-between items-center text-[10px] font-bold tracking-tight text-[#555555]">
+	                    <span>EN/NUM</span>
                   </div>
                   <div className="flex gap-1.5">
-                    <select
-                      value={englishFont.id}
-                      onChange={(e) => {
-                        if (e.target.value === "__load_system_fonts__") {
-                          loadSystemFontsIntoSelectors();
-                          return;
-                        }
-                        const found = allEnglishFonts.find(f => f.id === e.target.value);
-                        if (found) {
-                          updateActiveStyle({ englishFont: found });
-                        }
-                      }}
-                      className="flex-1 bg-white text-[#1a1a1a] border border-[#1a1a1a]/15 rounded px-2.5 py-1.5 text-xs focus:outline-none focus:border-[#3D67E6] font-medium font-sans cursor-pointer shadow-3xs"
-                    >
-                      {!allEnglishFonts.some(font => font.id === englishFont.id) && (
-                        <option value={englishFont.id}>
-                          {englishFont.name}
-                        </option>
-                      )}
-                      <option value="__load_system_fonts__" disabled={isScanning}>
-                        {isScanning ? "Loading installed fonts..." : systemFontsLoaded ? "Refresh installed fonts" : "Load installed fonts"}
-                      </option>
-                      {allEnglishFonts.map(font => (
-                        <option key={font.id} value={font.id}>
-                          {font.id.startsWith("local-system-") ? `[Installed] ${font.name}` : font.id.startsWith("local-") ? `[Local] ${font.name}` : font.name}
-                        </option>
-                      ))}
-                    </select>
+                    <FontSearchDropdown
+                      value={englishFont}
+                      fonts={allEnglishFonts}
+                      previewText={customText}
+                      onChange={(font) => updateActiveStyle({ englishFont: font })}
+                    />
                     <button
-                      onClick={() => openUploadModal("EN")}
-                      title="Upload local Latin font (.ttf, .otf)"
+                      type="button"
+                      onClick={() => openCloudFontModal("EN")}
+                      title="Add cloud Latin font"
                       className="bg-white hover:bg-[#F3F3F0] border border-[#1a1a1a]/15 px-2.5 rounded transition-all cursor-pointer text-[#3D67E6] flex items-center justify-center shadow-3xs"
                     >
-                      <Plus className="h-4 w-4" />
+                      <Cloud className="h-4 w-4" />
                     </button>
                   </div>
-                  {englishFont.id.startsWith("local-") && (
-                    <div className="text-[9px] text-[#3D67E6] font-semibold italic pl-1">
-                      *{englishFont.developer} Active
-                    </div>
-                  )}
-                </div>
+	                </div>
               </div>
             </div>
 
@@ -2826,34 +3661,26 @@ ${!koreanFont.id.startsWith("local-") ? `@import url('${krGoogleUrl}');` : "/* L
             <div className="order-2 flex flex-col">
               {/* Balance Parameters sliders row */}
               <div className="p-4 bg-white border-b border-[#1A1A1A]/10 space-y-4">
-                <div className="flex justify-between items-center border-b border-[#1A1A1A]/5 pb-2 select-none">
-                  <div className="text-[10px] font-bold text-[#888888] tracking-wider font-sans">
-                    Setting - <span className="text-[#3D67E6]">{activeStyle.name}</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleApplyActiveStyleToAllWeights}
-                    className="text-[9px] font-black text-[#3D67E6] bg-[#3D67E6]/8 hover:bg-[#3D67E6]/12 border border-[#3D67E6]/12 hover:border-[#3D67E6]/32 px-2 py-1 rounded transition-all cursor-pointer font-sans"
-                    title="Apply current balance settings to all weights."
-                  >
-                    {showSyncSuccess ? "Applied" : "Apply all"}
-                  </button>
-                </div>
+	                <div className="flex justify-between items-center pb-1 select-none">
+	                  <div className="text-[10px] font-bold text-[#888888] tracking-wider font-sans">
+	                    Setting
+	                  </div>
+	                </div>
 
                 <div className="space-y-3">
                   <div className="grid grid-cols-[32px_repeat(3,minmax(0,1fr))] gap-2 items-end">
                     <span className="text-[9px] font-black text-[#3D67E6] uppercase tracking-wider select-none font-sans pb-3">KR</span>
                     <div className="space-y-1.5 min-w-0">
                       <span className="text-[8.5px] font-bold text-[#888888] uppercase block pl-0.5 select-none font-sans">Size</span>
-                      <ScrubbableInput value={fontSizeKo} onChange={(val) => updateActiveStyle({ fontSizeKo: val })} min={12} max={120} step={1} label="Korean Base Size" suffix="px" />
+	                      <ScrubbableInput value={fontSizeKo} onChange={(val) => updateSettingValues({ fontSizeKo: val })} min={12} max={120} step={1} label="Korean Base Size" suffix="px" />
                     </div>
                     <div className="space-y-1.5 min-w-0">
                       <span className="text-[8.5px] font-bold text-[#888888] uppercase block pl-0.5 select-none font-sans">Tracking</span>
-                      <ScrubbableInput value={letterSpacingKo} onChange={(val) => updateActiveStyle({ letterSpacingKo: val })} min={-0.12} max={0.20} step={0.001} label="Korean Letter Spacing" suffix="em" />
+	                      <ScrubbableInput value={letterSpacingKo} onChange={(val) => updateSettingValues({ letterSpacingKo: val })} min={-0.12} max={0.20} step={0.001} label="Korean Letter Spacing" suffix="em" />
                     </div>
                     <div className="space-y-1.5 min-w-0">
                       <span className="text-[8.5px] font-bold text-[#888888] uppercase block pl-0.5 select-none font-sans">Line height</span>
-                      <ScrubbableInput value={lineHeight} onChange={(val) => updateActiveStyle({ lineHeight: val })} min={1.0} max={2.5} step={0.01} label="Line Height" suffix="em" />
+	                      <ScrubbableInput value={lineHeight} onChange={(val) => updateSettingValues({ lineHeight: val })} min={1.0} max={2.5} step={0.01} label="Line Height" suffix="em" />
                     </div>
                   </div>
 
@@ -2861,15 +3688,15 @@ ${!koreanFont.id.startsWith("local-") ? `@import url('${krGoogleUrl}');` : "/* L
                     <span className="text-[9px] font-black text-[#3D67E6] uppercase tracking-wider select-none font-sans pb-3">EN</span>
                     <div className="space-y-1.5 min-w-0">
                       <span className="text-[8.5px] font-bold text-[#888888] uppercase block pl-0.5 select-none font-sans">Scale</span>
-                      <ScrubbableInput value={enScale} onChange={(val) => updateActiveStyle({ enScale: val })} min={0.50} max={1.80} step={0.01} label="English Relative Scale" suffix="x" />
+	                      <ScrubbableInput value={enScale} onChange={(val) => updateSettingValues({ enScale: val })} min={0.50} max={1.80} step={0.01} label="English Relative Scale" suffix="x" />
                     </div>
                     <div className="space-y-1.5 min-w-0">
                       <span className="text-[8.5px] font-bold text-[#888888] uppercase block pl-0.5 select-none font-sans">Tracking</span>
-                      <ScrubbableInput value={letterSpacingEn} onChange={(val) => updateActiveStyle({ letterSpacingEn: val })} min={-0.12} max={0.20} step={0.001} label="English Letter Spacing" suffix="em" />
+	                      <ScrubbableInput value={letterSpacingEn} onChange={(val) => updateSettingValues({ letterSpacingEn: val })} min={-0.12} max={0.20} step={0.001} label="English Letter Spacing" suffix="em" />
                     </div>
                     <div className="space-y-1.5 min-w-0">
                       <span className="text-[8.5px] font-bold text-[#888888] uppercase block pl-0.5 select-none font-sans">Baseline</span>
-                      <ScrubbableInput value={baselineShiftEn} onChange={(val) => updateActiveStyle({ baselineShiftEn: val })} min={-20} max={20} step={0.1} label="English Baseline" suffix="%" />
+	                      <ScrubbableInput value={baselineShiftEn} onChange={(val) => updateSettingValues({ baselineShiftEn: val })} min={-20} max={20} step={0.1} label="English Baseline" suffix="%" />
                     </div>
                   </div>
 
@@ -2877,18 +3704,28 @@ ${!koreanFont.id.startsWith("local-") ? `@import url('${krGoogleUrl}');` : "/* L
                     <span className="text-[9px] font-black text-[#3D67E6] uppercase tracking-wider select-none font-sans pb-3">NUM</span>
                     <div className="space-y-1.5 min-w-0">
                       <span className="text-[8.5px] font-bold text-[#888888] uppercase block pl-0.5 select-none font-sans">Scale</span>
-                      <ScrubbableInput value={numScale} onChange={(val) => updateActiveStyle({ numScale: val })} min={0.50} max={1.80} step={0.01} label="Number Relative Scale" suffix="x" />
+	                      <ScrubbableInput value={numScale} onChange={(val) => updateSettingValues({ numScale: val })} min={0.50} max={1.80} step={0.01} label="Number Relative Scale" suffix="x" />
                     </div>
                     <div className="space-y-1.5 min-w-0">
                       <span className="text-[8.5px] font-bold text-[#888888] uppercase block pl-0.5 select-none font-sans">Tracking</span>
-                      <ScrubbableInput value={letterSpacingNum} onChange={(val) => updateActiveStyle({ letterSpacingNum: val })} min={-0.12} max={0.20} step={0.001} label="Number Letter Spacing" suffix="em" />
+	                      <ScrubbableInput value={letterSpacingNum} onChange={(val) => updateSettingValues({ letterSpacingNum: val })} min={-0.12} max={0.20} step={0.001} label="Number Letter Spacing" suffix="em" />
                     </div>
                     <div className="space-y-1.5 min-w-0">
                       <span className="text-[8.5px] font-bold text-[#888888] uppercase block pl-0.5 select-none font-sans">Baseline</span>
-                      <ScrubbableInput value={baselineShiftNum} onChange={(val) => updateActiveStyle({ baselineShiftNum: val })} min={-20} max={20} step={0.1} label="Number Baseline" suffix="%" />
-                    </div>
-                  </div>
-                </div>
+	                      <ScrubbableInput value={baselineShiftNum} onChange={(val) => updateSettingValues({ baselineShiftNum: val })} min={-20} max={20} step={0.1} label="Number Baseline" suffix="%" />
+	                    </div>
+	                  </div>
+	                  <div className="flex justify-start pt-0.5">
+	                    <button
+	                      type="button"
+	                      onClick={() => setIsAdvancedSettingOpen(true)}
+	                      className="text-[#1A1A1A]/35 hover:text-[#3D67E6] hover:bg-[#1A1A1A]/5 rounded px-1.5 py-1 transition-all cursor-pointer font-sans"
+	                      title="Fine tune settings per weight"
+	                    >
+	                      <MoreHorizontal className="h-4 w-4" />
+	                    </button>
+	                  </div>
+	                </div>
               </div>
             </div>
 
@@ -2896,48 +3733,102 @@ ${!koreanFont.id.startsWith("local-") ? `@import url('${krGoogleUrl}');` : "/* L
 
           {/* Action Zone: Reset & Export Controls inside sidebar bottom */}
           <div className="order-1 px-4 py-4 space-y-2 shrink-0 select-none bg-white border-b border-[#1A1A1A]/10">
-            <div className="flex gap-2">
-              <select
-                value={selectedPresetFileName}
-                onChange={(e) => setSelectedPresetFileName(e.target.value)}
-                className="flex-1 min-w-0 bg-white text-[#1A1A1A]/80 border border-[#1a1a1a]/10 rounded px-2.5 py-2 text-[10px] font-bold focus:outline-none focus:border-[#3D67E6] cursor-pointer"
-                title="Settings saved in fontmix-studio/preset"
-              >
-                <option value="">
-                  {isPresetListLoading ? "Loading presets..." : "No preset selected"}
-                </option>
-                {presetFiles.map((preset) => (
-                  <option key={preset.fileName} value={preset.fileName}>
-                    {preset.name}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                onClick={refreshPresetFiles}
-                className="bg-white hover:bg-[#F5F5F5] text-[#1A1A1A]/55 hover:text-[#3D67E6] text-[10px] font-black px-2.5 transition-all flex items-center justify-center cursor-pointer border border-[#1a1a1a]/10 hover:border-[#3D67E6]/30 shadow-xs active:scale-[0.98] rounded font-sans"
-                title="Refresh preset list"
-              >
-                <RefreshCw className="h-3.5 w-3.5" />
-              </button>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="flex gap-2 items-stretch">
+              <div ref={presetDropdownRef} className="relative flex-1 min-w-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    refreshPresetFiles();
+                    setIsPresetDropdownOpen((open) => !open);
+                  }}
+                  onDoubleClick={() => {
+                    const preset = presetFiles.find((item) => item.fileName === selectedPresetFileName);
+                    if (preset) startPresetRename(preset);
+                  }}
+                  className="w-full h-full min-h-9 bg-white text-[#1A1A1A]/80 border border-[#1a1a1a]/10 rounded px-2.5 py-2 text-[10px] font-bold focus:outline-none focus:border-[#3D67E6] cursor-pointer flex items-center justify-between gap-2 text-left"
+                  title="Preset dropdown"
+                >
+                  <span className="truncate">
+                    {isPresetListLoading
+                      ? "Loading presets..."
+                      : presetFiles.find((preset) => preset.fileName === selectedPresetFileName)?.name || "No preset selected"}
+                  </span>
+                  <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-[#1A1A1A]/45 transition-transform ${isPresetDropdownOpen ? "rotate-180" : ""}`} />
+                </button>
+
+                {isPresetDropdownOpen && (
+                  <div className="absolute left-0 right-0 top-[calc(100%+6px)] z-40 bg-white border border-[#1A1A1A]/12 rounded shadow-lg overflow-hidden">
+                    <div className="max-h-56 overflow-y-auto custom-sidebar-scrollbar py-1">
+                      {presetFiles.length === 0 ? (
+                        <div className="px-3 py-2.5 text-[10px] font-bold text-[#1A1A1A]/40">
+                          No presets saved
+                        </div>
+                      ) : (
+                        presetFiles.map((preset) => (
+                          <div
+                            key={preset.fileName}
+                            className={`group flex items-center gap-1 px-1.5 py-1 ${
+                              selectedPresetFileName === preset.fileName ? "bg-[#3D67E6]/6" : "hover:bg-[#F5F5F5]"
+                            }`}
+                          >
+                            {editingPresetFileName === preset.fileName ? (
+                              <input
+                                value={editingPresetName}
+                                onChange={(event) => setEditingPresetName(event.target.value)}
+                                onBlur={commitPresetRename}
+                                onKeyDown={(event) => {
+                                  if (event.key === "Enter") {
+                                    event.preventDefault();
+                                    commitPresetRename();
+                                  } else if (event.key === "Escape") {
+                                    event.preventDefault();
+                                    cancelPresetRename();
+                                  }
+                                }}
+                                autoFocus
+                                className="flex-1 min-w-0 bg-white border border-[#3D67E6]/45 rounded px-2 py-1.5 text-[10px] font-bold text-[#1A1A1A] outline-none"
+                              />
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleLoadPresetFile(preset.fileName, preset.name)}
+                                onDoubleClick={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  startPresetRename(preset);
+                                }}
+                                className="flex-1 min-w-0 text-left px-2 py-1.5 rounded text-[10px] font-bold text-[#1A1A1A]/80 hover:text-[#3D67E6] cursor-pointer"
+                                title={`Load ${preset.name}`}
+                              >
+                                <span className="block truncate">{preset.name}</span>
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                openPresetDeleteModal(preset);
+                              }}
+                              className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-[#1A1A1A]/35 hover:text-rose-600 hover:bg-rose-50 rounded p-1 transition-all cursor-pointer"
+                              title={`Delete ${preset.name}`}
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <button
                 type="button"
                 onClick={handleSaveSettingsToFile}
-                className="bg-white hover:bg-[#F5F5F5] text-[#1A1A1A]/80 hover:text-[#3D67E6] text-[10px] font-black uppercase tracking-wider py-2.5 transition-all flex items-center justify-center gap-1.5 cursor-pointer border border-[#1a1a1a]/10 hover:border-[#3D67E6]/30 shadow-xs active:scale-[0.98] rounded font-sans"
-                title="Save current weight fonts, punctuation, and settings"
+                className="bg-white hover:bg-[#F5F5F5] text-[#1A1A1A]/55 hover:text-[#3D67E6] text-[10px] font-black px-2.5 transition-all flex items-center justify-center cursor-pointer border border-[#1a1a1a]/10 hover:border-[#3D67E6]/30 shadow-xs active:scale-[0.98] rounded font-sans"
+                title="Save current settings"
               >
-                SAVE
-              </button>
-              <button
-                type="button"
-                onClick={handleLoadSelectedPreset}
-                disabled={!selectedPresetFileName}
-                className="bg-white hover:bg-[#F5F5F5] text-[#1A1A1A]/80 hover:text-[#3D67E6] text-[10px] font-black uppercase tracking-wider py-2.5 transition-all flex items-center justify-center gap-1.5 cursor-pointer border border-[#1a1a1a]/10 hover:border-[#3D67E6]/30 shadow-xs active:scale-[0.98] rounded font-sans disabled:opacity-40 disabled:cursor-not-allowed"
-                title="Load selected FontMix preset"
-              >
-                LOAD
+                <Save className="h-3.5 w-3.5" />
               </button>
             </div>
             {saveFileMessage && (
@@ -3364,6 +4255,99 @@ ${!koreanFont.id.startsWith("local-") ? `@import url('${krGoogleUrl}');` : "/* L
       )}
 
       {/* DRAG AND DROP LOCAL FONT UPLOAD MODAL */}
+      {isCloudFontOpen && (
+        <div className="fixed inset-0 bg-[#1A1A1A]/40 backdrop-blur-xs flex items-center justify-center z-[60] p-4">
+          <div className="bg-white border border-[#1a1a1a]/15 max-w-md w-full rounded shadow-xl overflow-hidden font-sans text-[#1A1A1A]">
+            <div className="px-6 py-4 border-b border-[#1a1a1a]/10 bg-[#FCFAF6] flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Cloud className="h-4.5 w-4.5 text-[#3D67E6]" />
+                <h3 className="text-xs font-extrabold uppercase tracking-wider">
+                  Add Cloud Font ({cloudTarget === "KO" ? "KR" : "EN/NUM"})
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsCloudFontOpen(false);
+                  setCloudMessage(null);
+                }}
+                className="text-[#1A1A1A]/40 hover:text-[#1A1A1A] p-1 cursor-pointer transition-colors"
+                title="Close"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="space-y-1.5">
+                <span className="text-[9px] font-black uppercase text-[#888888]">Provider</span>
+                <input
+                  type="text"
+                  value={cloudProvider}
+                  onChange={(event) => setCloudProvider(event.target.value)}
+                  className="w-full bg-white text-[#1A1A1A] border border-[#1A1A1A]/15 rounded px-3 py-2 text-xs font-semibold focus:outline-none focus:border-[#3D67E6]"
+                  placeholder="Adobe Fonts, Monotype, Sandoll Cloud..."
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <span className="text-[9px] font-black uppercase text-[#888888]">CSS URL</span>
+                <input
+                  type="url"
+                  value={cloudCssUrl}
+                  onChange={(event) => setCloudCssUrl(event.target.value)}
+                  className="w-full bg-white text-[#1A1A1A] border border-[#1A1A1A]/15 rounded px-3 py-2 text-xs font-semibold focus:outline-none focus:border-[#3D67E6]"
+                  placeholder="https://use.typekit.net/xxxx.css"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <span className="text-[9px] font-black uppercase text-[#888888]">Font family</span>
+                <input
+                  type="text"
+                  value={cloudFamilyName}
+                  onChange={(event) => setCloudFamilyName(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") handleAddCloudFont();
+                  }}
+                  className="w-full bg-white text-[#1A1A1A] border border-[#1A1A1A]/15 rounded px-3 py-2 text-xs font-semibold focus:outline-none focus:border-[#3D67E6]"
+                  placeholder="Exact CSS font-family name"
+                />
+              </div>
+
+              {cloudMessage && (
+                <div className={`p-3 rounded text-xs font-semibold border ${
+                  cloudMessage.type === "success"
+                    ? "bg-[#E6F3EA] text-[#2A7545] border-[#B7DFD2]"
+                    : cloudMessage.type === "error"
+                    ? "bg-[#FBEBEB] text-[#BF2121] border-[#EAAFA7]"
+                    : "bg-[#EBF3FB] text-[#2A65B1] border-[#B7D2DF]"
+                }`}>
+                  {cloudMessage.text}
+                </div>
+              )}
+            </div>
+
+            <div className="px-6 py-4 border-t border-[#1A1A1A]/10 bg-[#FCFAF6] flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setIsCloudFontOpen(false)}
+                className="px-4 py-2 text-xs font-bold text-[#1A1A1A]/55 hover:text-[#1A1A1A] cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleAddCloudFont}
+                className="px-4 py-2 text-xs font-black bg-[#3D67E6] hover:bg-[#2C4FB4] text-white rounded cursor-pointer transition-colors"
+              >
+                Add
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {isUploadOpen && (
         <div className="fixed inset-0 bg-[#1A1A1A]/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
           <div className="bg-white border border-[#1a1a1a]/15 max-w-lg w-full rounded-md shadow-xl flex flex-col overflow-hidden font-sans text-[#1A1A1A]">
@@ -3598,6 +4582,166 @@ ${!koreanFont.id.startsWith("local-") ? `@import url('${krGoogleUrl}');` : "/* L
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* ADVANCED PER-WEIGHT SETTING POPUP */}
+      {isAdvancedSettingOpen && (
+        <div className="fixed right-[360px] bottom-6 z-[55] w-[640px] max-w-[calc(100vw-400px)]">
+          <div className="bg-white border border-[#1a1a1a]/15 w-full rounded shadow-xl overflow-hidden font-sans text-[#1A1A1A]">
+            <div className="px-6 py-4 border-b border-[#1a1a1a]/10 bg-[#FCFAF6] flex items-center justify-between">
+              <h3 className="text-xs font-extrabold uppercase tracking-wider">
+                Advanced Settings
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIsAdvancedSettingOpen(false)}
+                className="text-[#1A1A1A]/40 hover:text-[#1A1A1A] p-1 cursor-pointer transition-colors"
+                title="Close"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="border-b border-[#1A1A1A]/10 bg-white px-4 pt-3">
+              <div className="flex items-end gap-1 overflow-x-auto custom-sidebar-scrollbar">
+                {styleInstances.map((style) => {
+                  const isActive = activeStyleId === style.id;
+                  return (
+                    <button
+                      key={style.id}
+                      type="button"
+                      onClick={() => setActiveStyleId(style.id)}
+                      className={`px-3 py-2 text-[10px] font-black rounded-t border border-b-0 transition-all cursor-pointer shrink-0 ${
+                        isActive
+                          ? "bg-[#3D67E6] text-white border-[#3D67E6]"
+                          : "bg-[#F8F8F6] text-[#1A1A1A]/45 border-[#1A1A1A]/10 hover:text-[#1A1A1A]/70"
+                      }`}
+                    >
+                      {style.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="space-y-3">
+                <div className="grid grid-cols-[32px_repeat(3,minmax(0,1fr))] gap-2 items-end">
+                  <span className="text-[9px] font-black text-[#3D67E6] uppercase tracking-wider select-none font-sans pb-3">KR</span>
+                  <div className="space-y-1.5 min-w-0">
+                    <span className="text-[8.5px] font-bold text-[#888888] uppercase block pl-0.5 select-none font-sans">Size</span>
+                    <ScrubbableInput value={fontSizeKo} onChange={(val) => updateActiveStyle({ fontSizeKo: val })} min={12} max={120} step={1} label="Korean Base Size" suffix="px" />
+                  </div>
+                  <div className="space-y-1.5 min-w-0">
+                    <span className="text-[8.5px] font-bold text-[#888888] uppercase block pl-0.5 select-none font-sans">Tracking</span>
+                    <ScrubbableInput value={letterSpacingKo} onChange={(val) => updateActiveStyle({ letterSpacingKo: val })} min={-0.12} max={0.20} step={0.001} label="Korean Letter Spacing" suffix="em" />
+                  </div>
+                  <div className="space-y-1.5 min-w-0">
+                    <span className="text-[8.5px] font-bold text-[#888888] uppercase block pl-0.5 select-none font-sans">Line height</span>
+                    <ScrubbableInput value={lineHeight} onChange={(val) => updateActiveStyle({ lineHeight: val })} min={1.0} max={2.5} step={0.01} label="Line Height" suffix="em" />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-[32px_repeat(3,minmax(0,1fr))] gap-2 items-end">
+                  <span className="text-[9px] font-black text-[#3D67E6] uppercase tracking-wider select-none font-sans pb-3">EN</span>
+                  <div className="space-y-1.5 min-w-0">
+                    <span className="text-[8.5px] font-bold text-[#888888] uppercase block pl-0.5 select-none font-sans">Scale</span>
+                    <ScrubbableInput value={enScale} onChange={(val) => updateActiveStyle({ enScale: val })} min={0.50} max={1.80} step={0.01} label="English Relative Scale" suffix="x" />
+                  </div>
+                  <div className="space-y-1.5 min-w-0">
+                    <span className="text-[8.5px] font-bold text-[#888888] uppercase block pl-0.5 select-none font-sans">Tracking</span>
+                    <ScrubbableInput value={letterSpacingEn} onChange={(val) => updateActiveStyle({ letterSpacingEn: val })} min={-0.12} max={0.20} step={0.001} label="English Letter Spacing" suffix="em" />
+                  </div>
+                  <div className="space-y-1.5 min-w-0">
+                    <span className="text-[8.5px] font-bold text-[#888888] uppercase block pl-0.5 select-none font-sans">Baseline</span>
+                    <ScrubbableInput value={baselineShiftEn} onChange={(val) => updateActiveStyle({ baselineShiftEn: val })} min={-20} max={20} step={0.1} label="English Baseline" suffix="%" />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-[32px_repeat(3,minmax(0,1fr))] gap-2 items-end">
+                  <span className="text-[9px] font-black text-[#3D67E6] uppercase tracking-wider select-none font-sans pb-3">NUM</span>
+                  <div className="space-y-1.5 min-w-0">
+                    <span className="text-[8.5px] font-bold text-[#888888] uppercase block pl-0.5 select-none font-sans">Scale</span>
+                    <ScrubbableInput value={numScale} onChange={(val) => updateActiveStyle({ numScale: val })} min={0.50} max={1.80} step={0.01} label="Number Relative Scale" suffix="x" />
+                  </div>
+                  <div className="space-y-1.5 min-w-0">
+                    <span className="text-[8.5px] font-bold text-[#888888] uppercase block pl-0.5 select-none font-sans">Tracking</span>
+                    <ScrubbableInput value={letterSpacingNum} onChange={(val) => updateActiveStyle({ letterSpacingNum: val })} min={-0.12} max={0.20} step={0.001} label="Number Letter Spacing" suffix="em" />
+                  </div>
+                  <div className="space-y-1.5 min-w-0">
+                    <span className="text-[8.5px] font-bold text-[#888888] uppercase block pl-0.5 select-none font-sans">Baseline</span>
+                    <ScrubbableInput value={baselineShiftNum} onChange={(val) => updateActiveStyle({ baselineShiftNum: val })} min={-20} max={20} step={0.1} label="Number Baseline" suffix="%" />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 bg-[#FCFAF6] border-t border-[#1a1a1a]/10 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setIsAdvancedSettingOpen(false)}
+                className="px-4 py-2 text-xs font-black rounded border border-[#1A1A1A]/10 bg-white hover:bg-[#F3F3F0] text-[#1A1A1A]/70 cursor-pointer transition-all"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PRESET DELETE CONFIRM MODAL */}
+      {presetDeleteTarget && (
+        <div className="fixed inset-0 bg-[#1A1A1A]/40 backdrop-blur-xs flex items-center justify-center z-[60] p-4">
+          <div className="bg-white border border-[#1a1a1a]/15 max-w-sm w-full rounded shadow-xl overflow-hidden font-sans text-[#1A1A1A]">
+            <div className="px-6 py-4 border-b border-[#1a1a1a]/10 bg-[#FCFAF6] flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Trash2 className="h-4 w-4 text-rose-600" />
+                <h3 className="text-xs font-extrabold uppercase tracking-wider">
+                  Delete Preset
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPresetDeleteTarget(null)}
+                className="text-[#1A1A1A]/40 hover:text-[#1A1A1A] p-1 cursor-pointer transition-colors"
+                title="Close"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="px-6 py-5 space-y-3">
+              <p className="text-sm font-bold leading-relaxed">
+                삭제하겠습니까?
+              </p>
+              <div className="rounded bg-[#1A1A1A]/4 border border-[#1A1A1A]/8 px-3 py-2 text-[11px] font-bold text-[#1A1A1A]/70 break-all">
+                {presetDeleteTarget.name}
+              </div>
+              <p className="text-[10px] leading-relaxed text-[#1A1A1A]/50 font-semibold">
+                프로젝트 preset 폴더에서 해당 설정 파일이 삭제됩니다.
+              </p>
+            </div>
+
+            <div className="px-6 py-4 bg-[#FCFAF6] border-t border-[#1a1a1a]/10 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setPresetDeleteTarget(null)}
+                disabled={isDeletingPreset}
+                className="px-4 py-2 text-xs font-black rounded border border-[#1A1A1A]/10 bg-white hover:bg-[#F3F3F0] text-[#1A1A1A]/70 cursor-pointer transition-all disabled:opacity-45 disabled:cursor-not-allowed"
+              >
+                아니오
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteSelectedPreset}
+                disabled={isDeletingPreset}
+                className="px-4 py-2 text-xs font-black rounded border border-rose-600 bg-rose-600 hover:bg-rose-700 text-white cursor-pointer transition-all shadow-sm disabled:opacity-45 disabled:cursor-not-allowed"
+              >
+                {isDeletingPreset ? "Deleting..." : "예"}
+              </button>
+            </div>
           </div>
         </div>
       )}

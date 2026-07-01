@@ -7,6 +7,15 @@ export interface FontMetadata {
   description: string;
   languages: ("EN" | "KO")[];
   vibeTags: string[];
+  source?: "system" | "uploaded" | "builtin" | "cloud" | "missing";
+  familyName?: string;
+  fullName?: string;
+  postscriptName?: string;
+  styleName?: string;
+  fontFormat?: "otf" | "ttf" | "unknown";
+  cloudCssUrl?: string;
+  cloudProvider?: string;
+  missing?: boolean;
 }
 
 export interface FontPairing {
@@ -52,7 +61,7 @@ export interface FontMixSaveFile {
   savedAt: string;
   name: string;
   punctuationRule: "all_en" | "all_ko" | "individual";
-  puncSettings: { [key: string]: "ko" | "en" };
+  puncSettings: { [key: string]: "ko" | "en" | "auto" };
   puncOffsets: { [key: string]: { left: number; right: number; shift: number } };
   styleInstances: StyleInstance[];
   activeStyleId: string;
